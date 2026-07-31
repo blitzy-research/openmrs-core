@@ -92,6 +92,11 @@ public class DrugOrderValidator extends OrderValidator implements Validator {
 		if (order == null) {
 			errors.reject("error.general");
 		} else {
+			// Rule 5 (pre-existing defect, documented not fixed): Order.hbm.xml no longer
+			// exists anywhere in the repository. Order is annotation-mapped - see Order.java,
+			// @Entity and @Table(name = "orders"). The only Order-prefixed HBM mappings left are
+			// OrderFrequency, OrderSet, OrderSetAttribute and OrderSetMember. The not-null
+			// expectations below are preserved as-is; only this citation is stale.
 			// for the following elements Order.hbm.xml says: not-null="true"
 			ValidationUtils.rejectIfEmpty(errors, "asNeeded", "error.null");
 			if (order.getAction() != Order.Action.DISCONTINUE) {
