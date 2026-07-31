@@ -526,7 +526,10 @@ public class UpdateFilter extends StartupFilter {
 	 */
 	@Override
 	public boolean skipFilter(HttpServletRequest httpRequest) {
-		return !PROGRESS_VM_AJAXREQUEST.equals(httpRequest.getParameter("page")) && !updatesRequired();
+		// The progress page poll is recognised through StartupFilter#isProgressPageAjaxRequest so that
+		// reading the "page" parameter never forces the container to parse a request body it cannot
+		// parse, which would fail inside this decision instead of being reported as a bad request.
+		return !isProgressPageAjaxRequest(httpRequest, PROGRESS_VM_AJAXREQUEST) && !updatesRequired();
 	}
 
 	/**

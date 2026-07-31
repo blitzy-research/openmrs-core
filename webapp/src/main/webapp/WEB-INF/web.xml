@@ -387,5 +387,44 @@
 		<extension>js</extension>
 		<mime-type>text/javascript</mime-type>
 	</mime-mapping>
+	
+	<!-- Controlled error responses.
+	     Without these declarations the servlet container renders its own error page, which discloses
+	     the stack trace, the filter and servlet class names with line numbers and the container name
+	     and version to the caller. Errors raised inside the filter chain - a malformed or oversized
+	     multipart upload, for example - are thrown before Spring's DispatcherServlet is entered, so
+	     neither a @ControllerAdvice nor a HandlerExceptionResolver can intercept them; the container's
+	     error-page mechanism is the only place where they can be turned into a controlled response.
+	     /error.html is a static page, so rendering it on an ERROR dispatch cannot disclose anything
+	     about the request that failed. -->
+	<error-page>
+		<error-code>400</error-code>
+		<location>/error.html</location>
+	</error-page>
+	<error-page>
+		<error-code>403</error-code>
+		<location>/error.html</location>
+	</error-page>
+	<error-page>
+		<error-code>404</error-code>
+		<location>/error.html</location>
+	</error-page>
+	<error-page>
+		<error-code>405</error-code>
+		<location>/error.html</location>
+	</error-page>
+	<error-page>
+		<!-- Some containers report an oversized request body as 413 rather than 400 -->
+		<error-code>413</error-code>
+		<location>/error.html</location>
+	</error-page>
+	<error-page>
+		<error-code>500</error-code>
+		<location>/error.html</location>
+	</error-page>
+	<error-page>
+		<exception-type>java.lang.Throwable</exception-type>
+		<location>/error.html</location>
+	</error-page>
 
 </web-app>

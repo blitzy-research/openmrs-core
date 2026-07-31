@@ -61,7 +61,25 @@ public class PseudoStaticContentController implements Controller, GlobalProperty
 	@Override
 	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response)
 	        throws ServletException, IOException {
-		String path = request.getServletPath() + request.getPathInfo();
+		String pathInfo = request.getPathInfo();
+		if (pathInfo == null) {
+			// the servlet was addressed without a resource below it, e.g. "/scripts"
+			response.sendError(HttpServletResponse.SC_NOT_FOUND);
+			return null;
+		}
+
+		String path = request.getServletPath() + pathInfo;
+
+		if (!isSafeResourcePath(path)) {
+			// The view name resolved here is handed to an InternalResourceView, which forwards it through
+			// the servlet container. Containers reject forward targets that contain an empty or relative
+			// path segment - a percent-encoded slash, for instance, decodes into an empty segment - and the
+			// resulting IllegalStateException would surface as an uncontrolled HTTP 500 disclosing the whole
+			// filter chain. Such a path can never name a real static resource, so answer 404 up front.
+			log.warn("Rejecting request for a static resource path that cannot be resolved safely: {}", path);
+			response.sendError(HttpServletResponse.SC_NOT_FOUND);
+			return null;
+		}
 
 		if (rewrites != null && rewrites.containsKey(path)) {
 			path = rewrites.get(path);
@@ -71,6 +89,36 @@ public class PseudoStaticContentController implements Controller, GlobalProperty
 		}
 
 		return new ModelAndView(path);
+	}
+
+	/**
+	 * Tells whether the given path may safely be resolved to a view and forwarded by the servlet
+	 * container.
+	 * <p>
+	 * The path arrives already percent-decoded from {@link HttpServletRequest#getPathInfo()}, so a
+	 * request for {@code /scripts/%2f} yields {@code /scripts//} - an empty path segment. Empty,
+	 * {@code "."} and {@code ".."} segments are rejected because a container forward on such a target
+	 * is refused, and hidden (dot-prefixed) segments are rejected because repository control files are
+	 * never legitimate static web content. Backslashes and NUL characters are rejected for the same
+	 * reason.
+	 *
+	 * @param path the decoded, context-relative resource path, never null
+	 * @return true when every segment of the path is a plain, visible name
+	 */
+	private static boolean isSafeResourcePath(String path) {
+		if (!path.startsWith("/") || path.indexOf('\\') >= 0 || path.indexOf('\0') >= 0) {
+			return false;
+		}
+
+		// drop the leading separator, then split with a negative limit so that a trailing separator still
+		// produces a trailing empty segment and is therefore caught below
+		for (String segment : path.substring(1).split("/", -1)) {
+			if (segment.isEmpty() || segment.charAt(0) == '.') {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	public long getLastModified(HttpServletRequest request) {

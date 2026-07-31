@@ -26,6 +26,12 @@
        <!--enable reloading static resources in windows-->
       <param-value>false</param-value>
     </init-param>
+    <init-param>
+      <param-name>dirAllowed</param-name>
+      <!--never answer a request for a directory with a listing of its contents: the container serves
+          one by default, which enumerates the file names and discloses the internal path-->
+      <param-value>false</param-value>
+    </init-param>
   </servlet>
 
 </web-app>
