@@ -168,6 +168,11 @@ public class DbSession {
 
 	/**
 	 * Create {@link CriteriaQuery} instance for the given class (entity or subclasses/implementors).
+	 * Despite its legacy name, this method does not return the {@code org.hibernate.Criteria} that was
+	 * removed in Hibernate 6. The returned instance is built by
+	 * {@code getSession().getCriteriaBuilder().createQuery(persistentClass)} and is a JPA
+	 * {@code jakarta.persistence.criteria.CriteriaQuery}. The name is retained for API compatibility
+	 * with the DAO layer that calls it.
 	 *
 	 * @param persistentClass The class, which is an entity, or has entity subclasses/implementors
 	 * @return The criteria instance for manipulation and execution

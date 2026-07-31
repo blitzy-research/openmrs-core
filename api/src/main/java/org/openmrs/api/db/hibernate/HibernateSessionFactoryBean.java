@@ -214,7 +214,7 @@ public class HibernateSessionFactoryBean extends LocalSessionFactoryBean impleme
 	}
 
 	/**
-	 * @see org.springframework.orm.hibernate3.LocalSessionFactoryBean#destroy()
+	 * @see org.springframework.orm.jpa.hibernate.LocalSessionFactoryBean#destroy()
 	 */
 	@Override
 	public void destroy() throws HibernateException {

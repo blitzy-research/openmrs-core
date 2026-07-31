@@ -10,6 +10,7 @@
     graphic logo is a trademark of OpenMRS Inc.
 
 -->
+<!-- Pre-existing defect, documented and deliberately left unrepaired (Rule 5: document, do not repair): the root start-tag below is terminated by a doubled '>' on line 16, where the xmlns attribute value ends with '>>' instead of a single '>'. The stray second '>' is legal XML character data, so the file still parses and the "entity" cache template still loads. Not attributable to the Spring, Hibernate, Jakarta or Java 21 upgrade; the sibling infinispan-api.xml shows the correct single '>' form. -->
 <infinispan xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
             xsi:schemaLocation="urn:infinispan:config:15.2 https://infinispan.org/schemas/infinispan-config-15.2.xsd" 
             xmlns="urn:infinispan:config:15.2">>
