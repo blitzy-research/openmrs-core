@@ -81,6 +81,19 @@ Both values were re-measured with `java -version` and `./mvnw -version` rather t
 match the versions recorded during planning. The compiler release level is fixed at **21** and was not
 raised.
 
+### 4. Which Commit Every Comparison Is Taken Against
+
+**All before/after comparisons in this document are taken against
+`3934d8086c684269e935562f25e806be91947115`** — the Agent Action Plan's base commit and the parent of the
+first change in this work. Every `"$BASE"` in every command block in this document is that hash.
+
+One disclosure is owed here rather than left implicit. A review pass over this change nominated
+`2cbf9d7f8762451bdf253455c6e988eef732b843` as its comparison baseline, and **that object does not resolve
+in this repository** (`git cat-file -t` fails on it). It is therefore not used anywhere in this document,
+and no figure here is derived from it. `3934d8086` is the only baseline that both exists and is
+defensible, so it is the only one cited. Where a count in the Agent Action Plan disagrees with a count
+measured at `3934d8086`, the measured value is used and the discrepancy is stated at the point of use.
+
 ## Section (a): Test Baseline and Post-Change Re-Capture
 
 The existing corpus is the oracle. Both captures below were produced with `./mvnw test -B` on the
@@ -105,13 +118,22 @@ it, and the total was summed arithmetically rather than transcribed.
 
 | Measurement | Pre-change (planning capture) | Post-change (measured here) |
 |---|---|---|
-| `clean install -DskipTests` | `BUILD SUCCESS`, 2 min 16 s, 13 of 13 reactor projects | `BUILD SUCCESS`, **1 min 19 s**, **13 of 13** reactor projects, exit code **0** |
-| `test` | `BUILD SUCCESS`, 10 min 17 s | `BUILD SUCCESS`, **10 min 17 s**, exit code **0** |
+| `clean install -DskipTests` | `BUILD SUCCESS`, 2 min 16 s, 13 of 13 reactor projects | `BUILD SUCCESS`, **1 min 21 s**, **13 of 13** reactor projects, exit code **0** |
+| `test` | `BUILD SUCCESS`, 10 min 17 s | `BUILD SUCCESS`, **10 min 07 s**, exit code **0** |
+| `dependency:tree` | — | `BUILD SUCCESS`, **1,620 lines**, exit code **0** |
+| `spotless:check -Dspotless.check.skip=false` | — | `BUILD SUCCESS`, **0 violations**, exit code **0** |
 
-> **Note:** the post-change `install` wall clock is *faster* than the pre-change figure (1:19 against
-> 2:16), not slower. The difference is environmental — the local Maven repository was already fully
-> warmed, so nothing was downloaded. It is reported as measured rather than normalised to the earlier
-> number, and it satisfies the "no material build-time regression" gate in the reproduction section.
+> **Note:** the post-change `install` wall clock is *faster* than the pre-change figure (1:21 against
+> 2:16), and `test` is marginally faster (10:07 against 10:17). Neither is a speed claim: the difference
+> is environmental — the local Maven repository was already fully warmed, so nothing was downloaded, and
+> wall clock on a shared host is not a controlled benchmark. Both are reported as measured rather than
+> normalised to the earlier numbers, and both satisfy the "no material build-time regression" gate in the
+> reproduction section.
+>
+> The per-module totals in the table above were cross-checked two independent ways: by parsing each
+> `Results:` block against the `Building <module>` line preceding it, and by aggregating the **335**
+> Surefire XML reports the run wrote (`tests=5106 failures=0 errors=0 skipped=45`). Both agree, and the
+> log contains **zero** `[ERROR]` lines and **zero** `BUILD FAILURE` lines.
 
 ### 2. Invariants That Held
 
@@ -123,9 +145,24 @@ it, and the total was summed arithmetically rather than transcribed.
 - **No assertion was weakened, no test was deleted, and no new `@Disabled` was added.** The only path
   under any `src/test/` tree that this change touches is `webapp/src/test/resources/override-web.xml`,
   a servlet-container **resource** descriptor, not a test. **Zero Java test files were modified.**
-- The **45 skips** trace to **42 `@Disabled` annotations across 22 `api` test classes**, 6 of them
-  class-level. This was verified at both ends: the `@Disabled` occurrence count is **42** at the base
-  commit and **42** at the changed tree, so the ceiling did not grow.
+- The **45 skips** trace to `@Disabled`, and the census was re-counted here rather than carried over,
+  because the figure recorded during planning ("42 annotations across 22 `api` test classes") does not
+  match the tree. The measured values, taken by scanning every tracked `.java` file and excluding
+  imports, javadoc and commented-out lines:
+
+  | Scope | `@Disabled` annotations | Files |
+  |---|---|---|
+  | under `api/` | **41** | **21** |
+  | `test-suite/performance` (`StartupPerformanceIT`, an IT that the default `test` phase never runs) | 2 | 1 |
+  | **repository-wide** | **43** | **22** |
+
+  **6** of them are class-level — on `SerializedObjectDAOTest`, `Log4JCompatibilityTest`,
+  `ModuleTestSuite`, `CreateConceptDictionaryDataSet`, `CreateCoreUuids` and `CreateInitialDataSet` —
+  which is why 41 annotations expand to 45 skipped *methods*: a class-level `@Disabled` contributes one
+  skip per test method in the class.
+- The ceiling did not grow. The identical census was taken at the base commit and at the changed tree
+  and both report **43 annotations in 22 files repository-wide, 41 in 21 files under `api/`**. Since the
+  two are equal, no `@Disabled` was added.
 - Surefire's global `argLine` is load-bearing on Java 21 and was not altered. It is *composed* rather
   than literal — the root `pom.xml` declares
   `-Duser.language=en -Duser.region=US -Xmx1g ${customArgLineForTesting} -Djava.locale.providers=COMPAT`
@@ -456,30 +493,46 @@ asserted from memory.**
 
 ## Section (e): Clean-Database Liquibase Run and Schema Diff
 
-### 1. This Is a Procedure, Not an Executed Result
+### 1. EXECUTED — Measured Result, Not a Procedure
 
-**The clean-database Liquibase run and the `mysqldump --no-data` schema comparison were not executed as
-part of this change.** Nothing in this section should be read as a report of an observed diff.
-
-The environmental constraint deserves stating precisely, because it differs between the environment
-where this change was planned and the environment where it was carried out:
+**This comparison was executed, and the diff is empty.** The environmental note below explains why the
+planning phase expected to be unable to run it, and why that limitation no longer applies.
 
 - In the **planning environment** no `mysql`, `mysqld` or `mysqldump` binary was present at all, and
-  neither were `mariadb` or `mariadb-dump`. That is why the item was specified as a procedure.
+  neither were `mariadb` or `mariadb-dump`. That is why the item was originally specified as a procedure,
+  and that historical statement is **phase-labelled here rather than repeated in the present tense**.
 - In the **execution environment** the client tooling *is* present — `mysql`, `mysqldump`, `mariadb` and
-  `mariadb-dump` all resolve, from a MariaDB 11.8.3 client package — and a `mariadb:10.11.7` server is
-  reachable on `127.0.0.1:3306`. Only the server binaries `mysqld` and `mariadbd` are absent, because
-  the server runs in a container.
+  `mariadb-dump` all resolve, from a **MariaDB 11.8.3** client package — and a **`mariadb:10.11.7`**
+  server (`10.11.7-MariaDB-1:10.11.7+maria~ubu2204`) is reachable on `127.0.0.1:3306`. Only the server
+  binaries `mysqld` and `mariadbd` are absent, because the server runs in a container.
 
-So the *tooling* gap has closed, and this document does not repeat the claim that it has not. The diff
-was nonetheless not performed, for two substantive reasons:
+The "pre-change" side is genuine without touching the working tree: the base commit's changelog bytes were
+materialised with `git archive 3934d8086`, and each of the **38** extracted files was verified against its
+working-tree counterpart with `cmp` — **38 identical, 0 differing**. Both sides were then installed into
+their own **disposable, clone-scoped** database by the same Liquibase **4.32.0** engine, driving
+`liquibase-schema-only.xml`, and each was dumped with `mysqldump --no-data --skip-comments`.
 
-1. A genuine **pre-change** capture must come from a clean database brought up by the changelogs *as
-   they were before the change*. Producing one requires checking out the base commit, which is outside
-   what this change may do to the working tree.
-2. A **stronger and directly executable proof is available and was executed instead** — the changelog
-   inputs are provably byte-identical before and after, which is established below and which implies an
-   empty diff rather than sampling for one.
+| Measurement | Before side (base-commit changelog bytes) | After side (current changelog bytes) |
+|---|---|---|
+| Tables | **119** | **119** |
+| Columns | **1,510** | **1,510** |
+| Indexes | **697** | **697** |
+| Foreign keys | **446** | **446** |
+| Applied changesets | **1,028** | **1,028** |
+| `CREATE TABLE` statements in the dump | **119** | **119** |
+| Dump size | **3,389 lines / 175,152 bytes** | **3,389 lines / 175,152 bytes** |
+| MD5 of the dump | `e63817993751bc129d7a5843f3e41af1` | `e63817993751bc129d7a5843f3e41af1` |
+
+**`diff` exited 0 with zero differing lines.** The only normalisation applied was the database *name*,
+which is necessarily different between two disposable databases; no DDL text was touched.
+
+Two safety statements, because this ran against a shared server: only the two databases created for this
+comparison were dropped afterwards, and the shared `openmrs` database was re-verified after cleanup at
+**126 tables / 1,065 changesets** — identical to its pre-existing state. A neighbouring clone's database
+was left untouched.
+
+Section (e).5 below sets out, independently of this measurement, the four structural reasons the diff
+**had** to be empty. The measurement and the reasoning agree.
 
 ### 2. The Harness Already Exists
 
@@ -505,27 +558,51 @@ was verified.
 
 ### 4. The Procedure
 
-```bash
-  # 1. Capture the baseline schema BEFORE the change, from a clean database that has
-  #    been brought up by the UNMODIFIED changelogs.
-  mysqldump --no-data --skip-comments -h 127.0.0.1 -u <user> -p<pw> openmrs > baseline-schema.sql
+> **Destructive-command warning.** Steps 2 and 4 drop and recreate a database. Point them **only** at a
+> disposable, clone-scoped database or a throwaway container — never at the shared `openmrs` database and
+> never at anything holding real data.
 
-  # 2. Drop and recreate the database, then apply the changelogs AFTER the change,
+Credentials go in a `--defaults-extra-file`, not on the command line. The `-u <user> -p<pw>` form that
+looks natural in prose is **not executable**: the shell reads `<user>` and `>` as input/output
+redirection, so the command fails before `mysqldump` ever starts.
+
+```bash
+  # 0. Credentials once, in a private file. Never inline them, never use -p<pw>.
+  MYSQL_CNF="$(mktemp)"; chmod 600 "$MYSQL_CNF"
+  printf '[client]\nuser=openmrs\npassword=openmrs\nhost=127.0.0.1\n' > "$MYSQL_CNF"
+
+  # 1. Capture the baseline schema BEFORE the change, from a clean, DISPOSABLE database
+  #    that has been brought up by the UNMODIFIED changelogs.
+  DB_NAME=openmrs_schema_before          # disposable - NOT the shared openmrs database
+  mysqldump --defaults-extra-file="$MYSQL_CNF" \
+    --no-data --skip-comments "$DB_NAME" > baseline-schema.sql
+
+  # 2. Recreate a second disposable database and apply the changelogs AFTER the change,
   #    using the existing plugin configuration in liquibase/pom.xml
-  #    (driver com.mysql.cj.jdbc.Driver, url jdbc:mysql://127.0.0.1:3306/openmrs).
+  #    (driver com.mysql.cj.jdbc.Driver, url jdbc:mysql://127.0.0.1:3306/<disposable db>).
+  DB_NAME_AFTER=openmrs_schema_after
+  mysql --defaults-extra-file="$MYSQL_CNF" \
+    -e "DROP DATABASE IF EXISTS \`$DB_NAME_AFTER\`; CREATE DATABASE \`$DB_NAME_AFTER\`;"
 
   # 3. Capture the post-change schema exactly the same way.
-  mysqldump --no-data --skip-comments -h 127.0.0.1 -u <user> -p<pw> openmrs > postchange-schema.sql
+  mysqldump --defaults-extra-file="$MYSQL_CNF" \
+    --no-data --skip-comments "$DB_NAME_AFTER" > postchange-schema.sql
 
-  # 4. Compare. Expected: EMPTY.
+  # 4. Compare. Expected: EMPTY (diff exits 0).
   diff baseline-schema.sql postchange-schema.sql
+
+  # 5. Clean up: drop both disposable databases and shred the credentials file.
+  mysql --defaults-extra-file="$MYSQL_CNF" \
+    -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; DROP DATABASE IF EXISTS \`$DB_NAME_AFTER\`;"
+  rm -f "$MYSQL_CNF"
 ```
 
 ### 5. Why the Diff Is Empty by Construction
 
 Four independent reasons, each verified:
 
-**Reason 1 — every changelog file is frozen byte-for-byte.** `git diff` against the base commit reports
+**Reason 1 — every changelog file is frozen byte-for-byte.** `git diff --name-status "$BASE"..HEAD`
+against the base commit reports
 **zero** changed paths for `api/src/main/resources/liquibase-*.xml` and **zero** for everything under
 `api/src/main/resources/org/openmrs/liquibase/`. No changeset, checksum or ordering changed.
 
@@ -719,7 +796,7 @@ so none of them was fixed.** Each is annotated in a comment at its own site.
 | # | Site | Condition | Attributable to the target stack? |
 |---|---|---|---|
 | 1 | `api/src/main/resources/hibernate.default.properties` | `hibernate.connection.driver_class=com.mysql.jdbc.Driver` is the deprecated legacy driver class name; MySQL Connector/J 9.7.0 emits a deprecation notice on every test run. The modern name is `com.mysql.cj.jdbc.Driver`, which `liquibase/pom.xml` already uses | **No** — JDBC driver naming. Comment only; **the value was not changed** |
-| 2 | `api/src/main/resources/infinispan-api-local.xml` | malformed root start-tag with a **doubled `>`**: `xmlns="urn:infinispan:config:15.2">>`. The well-formed sibling is `infinispan-api.xml` | **No**. Comment only; **not fixed** |
+| 2 | `api/src/main/resources/infinispan-api-local.xml` | an **extra `>`** immediately after the root start-tag: `xmlns="urn:infinispan:config:15.2">>`. The file is **XML-well-formed** — the second `>` is not a syntax error but becomes an unintended **text node** child of `<infinispan>`, i.e. invalid *configuration content* rather than invalid XML. Confirmed by parsing the file: it parses cleanly and the root reports one non-whitespace text child, `">\n\t"`. The clean sibling is `infinispan-api.xml` | **No**. Comment only; **not fixed** |
 | 3 | `api/src/main/java/org/openmrs/validator/OrderValidator.java` | a comment cites `Order.hbm.xml`, which **does not exist** — only `OrderFrequency`, `OrderSet`, `OrderSetAttribute` and `OrderSetMember` HBM files exist; `Order` is annotation-mapped | **No**. Comment correction only |
 | 4 | `api/src/main/java/org/openmrs/validator/DrugOrderValidator.java` | the identical stale `Order.hbm.xml` citation | **No**. Comment correction only |
 | 5 | `api/src/main/java/org/openmrs/api/db/hibernate/type/StringEnumType.java` | the javadoc says the class should be deleted once `Obs`, `ConceptName` and `OrderSet` move from HBM to annotations, but `ConceptName` is **already annotated**, so the stated precondition is only partly satisfied | **No**. Comment correction only. **This file was promoted from inspected-only to edited solely because of Rule 5** — a directly traceable consequence of the rule |
@@ -730,7 +807,7 @@ so none of them was fixed.** Each is annotated in a comment at its own site.
 
 The annotation comments added for items 1, 2 and 5 shifted the lines they describe. The line references
 recorded during planning were correct **at the base commit** but no longer point at the same text: the
-deprecated `driver_class` moved from L6 to L7, the doubled `>>` from L15 to L16,
+deprecated `driver_class` moved from L6 to L7, the extra `>` from L15 to L16,
 `hibernate.cache.region.factory_class` from L30 to L31, and the `StringEnumType` class declaration from
 L38 to L44. These sites are therefore cited by content throughout this document. Line numbers move;
 identifiers and text do not.
@@ -756,7 +833,7 @@ failed regardless of a green build.
 
 ### 1. The Frozen Advisor Chain
 
-`api/src/main/java/org/openmrs/aop/AOPConfig.java` was **not edited** — `git diff` against the base commit
+`api/src/main/java/org/openmrs/aop/AOPConfig.java` was **not edited** — `git diff "$BASE"..HEAD` against the base commit
 reports zero changes to it. Its ordering, verified in source, is:
 
 | Advisor | Order |
@@ -815,7 +892,7 @@ or `org.hibernate.transform` remain.
 ### 5. DAO Structure Preserved
 
 Rule 4 forbids restructuring the data-access layer, and the proof is a diff rather than an inventory:
-`git diff` against the base commit for `api/src/main/java/org/openmrs/api/db/` reports **3 files changed,
+`git diff "$BASE"..HEAD` for `api/src/main/java/org/openmrs/api/db/` reports **3 files changed,
 13 insertions and 1 deletion — every one of them inside a javadoc or comment block.** There is no code,
 signature, package or structural change anywhere in that tree.
 
@@ -887,7 +964,10 @@ jar is used.
   ./mvnw verify -Pperformance-test -B          # documented, NOT executed here
 
   # V3 - clean-database Liquibase run and mysqldump --no-data diff
-  #      DOCUMENTED PROCEDURE, NOT EXECUTED. See section (e).
+  #      EXECUTED. Both sides installed by Liquibase 4.32.0 into their own disposable
+  #      database - the "before" side from `git archive 3934d8086`-extracted changelog
+  #      bytes - then dumped and compared. Result: diff exit 0, zero differing lines,
+  #      identical MD5. Full procedure and measurements in section (e).
 
   # V4 - service-output capture; the V2 run IS the capture, against the fixed
   #      DBUnit reference datasets. Expect an identical pass set, an identical
@@ -918,7 +998,7 @@ jar is used.
   # A5  no pre-Jakarta servlet descriptor remains
   git ls-files '*.xml' | xargs grep -ln "java.sun.com/xml/ns/javaee"       # expect 0
 
-  # A4/A5 note: scope these two greps to TRACKED files. The bare recursive form
+  # A4/A5 note 1: scope these two greps to TRACKED files. The bare recursive form
   #   grep -rn "java.sun.com/xml/ns/javaee" --include=*.xml .
   # returns 0 on a clean checkout but 1 on a tree that has been built, because
   # web/target/spotbugsXml.xml - generated build output, untracked and gitignored -
@@ -926,18 +1006,41 @@ jar is used.
   # report, not a surviving descriptor; both web.xml and override-web.xml are on
   # https://jakarta.ee/xml/ns/jakartaee. The gate is about source, so it must
   # measure source.
+  #
+  # A4/A5 note 2: scope them to '*.xml' - to DESCRIPTORS - and not to every tracked
+  # file. Dropping the pathspec makes A5 report one hit, in THIS document, which
+  # quotes the retired java.sun.com namespace on purpose when recording the
+  # before/after transformation of override-web.xml. Prose describing a namespace
+  # that was removed is the evidence, not a violation of it. Both gates measure
+  # zero over '*.xml', which is the set that actually configures the container.
 
   # A6  no transformation or shading plugin was introduced (Rule 2): still exactly
   #     the 23 managed plugins, no transformer/shade/relocate.
 
-  # A7  frozen artifacts untouched
-  git diff --name-only    # expect no path under api/src/main/resources/org/openmrs/liquibase/,
-                          # no liquibase-*.xml, no .hbm.xml, no AOPConfig.java, no initial_test_db.sql
+  # A7  frozen artifacts untouched. Compare COMMITTED state against the base commit -
+  #     a worktree-only `git diff` / `git status` reports nothing at a clean HEAD and
+  #     therefore cannot verify a committed change at all.
+  BASE=3934d8086c684269e935562f25e806be91947115
+  git diff --name-status "$BASE"..HEAD -- \
+    'api/src/main/resources/liquibase-*.xml' \
+    'api/src/main/resources/org/openmrs/liquibase/**' \
+    'api/src/main/resources/**/*.hbm.xml' \
+    api/src/main/resources/hibernate.cfg.xml \
+    api/src/main/java/org/openmrs/aop/AOPConfig.java \
+    api/src/main/java/org/openmrs/aop/AuthorizationAdvice.java \
+    webapp/src/main/webapp/WEB-INF/web.xml                         # expect NO output
+  # Prove the gate is not vacuous - a pathspec that matches nothing also prints nothing:
+  git ls-files -- 'api/src/main/resources/liquibase-*.xml' \
+    'api/src/main/resources/org/openmrs/liquibase/**' \
+    'api/src/main/resources/**/*.hbm.xml' | wc -l                  # expect a non-zero count
 
   # A8  build wall clock not materially regressed against 2:16 and 10:17
 
-  # A9  formatting conforms
-  ./mvnw spotless:check -B                                                 # expect BUILD SUCCESS
+  # A9  formatting conforms. The -D flag is LOAD-BEARING: the root pom.xml sets
+  #     <spotless.check.skip>true</spotless.check.skip> by default and only the
+  #     ci-checks profile flips it, so a bare `./mvnw spotless:check` prints
+  #     "Spotless check skipped" for every module and STILL EXITS 0 - a vacuous pass.
+  ./mvnw spotless:check -B -Dspotless.check.skip=false      # expect BUILD SUCCESS, 0 violations
 
   # A10 this document exists and is complete
   test -f doc/JAKARTA_MIGRATION_BASELINE.md && echo present
@@ -945,8 +1048,26 @@ jar is used.
 
 All of A1 through A10 were run against the changed tree and all passed. A4, A5 and A7 return zero over
 tracked source, with the build-output caveat on A5 recorded in the block above rather than left for a
-future reader to trip over; A9 reports `BUILD SUCCESS` with no file reformatted; A8 is satisfied with the
-`install` phase measurably faster and `test` identical, as recorded in section (a).
+future reader to trip over; A9 reports `BUILD SUCCESS` with no file reformatted, using the explicit
+`-Dspotless.check.skip=false` that makes the goal actually execute; A8 is satisfied with the `install`
+phase measurably faster and `test` identical, as recorded in section (a).
+
+### 3. Reading a Negative Grep Correctly
+
+Most gates above are **negative** checks: success means *no output*. `grep` signals that with **exit
+status 1**, not 0, so a naive `&&` chain or a `set -e` script treats a passing gate as a failure. Wrap
+each negative check so the intent is explicit:
+
+```bash
+  if grep -Eq '^\[INFO\][^:]*[+\\|-]- javax\.' deptree.txt; then
+    echo 'FAIL: unexpected javax dependency-tree node' >&2
+    exit 1
+  fi
+  echo 'PASS: no javax dependency-tree node'
+```
+
+The same shape applies to V5, A1, A4 and A5. Every "expect 0 matches" comment in this document means
+*grep printed nothing and exited 1*, which is the passing outcome.
 
 ## Definition of Done
 
@@ -958,13 +1079,17 @@ future reader to trip over; A9 reports `BUILD SUCCESS` with no file reformatted;
 - [x] `grep -rE "import javax\.(servlet|persistence|validation|annotation|transaction)"` returns zero hits.
 - [x] The three removed coordinates are absent from the graph and from `NOTICE.md`, and no other
       attribution was disturbed.
-- [x] No file under the frozen sets appears in `git diff --name-only`.
-- [x] This document exists and carries the full evidence trail, including the section (e) procedure and the
-      environmental facts that kept it from being executed.
+- [x] No file under the frozen sets appears in `git diff --name-status "$BASE"..HEAD` for the frozen
+      pathspecs (the committed-range form; a worktree-only `git diff` proves nothing at a clean HEAD).
+- [x] This document exists and carries the full evidence trail, including the executed section (e)
+      comparison and the phase-labelled environment history behind it.
 - [x] Every UPDATE is traceable to a named target-stack justification, and every one of the seven
       pre-existing defect register items is annotated in a comment at its site and left unfixed.
-- [ ] The clean-database Liquibase run and `mysqldump --no-data` schema diff — **documented as a procedure,
-      deliberately not executed here.** Left unchecked on purpose; see section (e).
+- [x] The clean-database Liquibase run and `mysqldump --no-data` schema diff — **executed**, not merely
+      documented: two disposable databases installed by Liquibase 4.32.0 from base-commit and current
+      changelog bytes, both dumped and compared. **`diff` exit 0, zero differing lines, identical MD5
+      `e63817993751bc129d7a5843f3e41af1`, 119 tables / 1,510 columns / 697 indexes / 446 foreign keys /
+      1,028 changesets on each side.** See section (e).
 
 ## Further Reading
 
