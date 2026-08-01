@@ -150,8 +150,11 @@ than taken on trust. An earlier revision of this section reported an `install` o
 10:07 without saying which run produced them; those figures are replaced here by a single, fully attributed
 set.
 
-**The capture.** Commit `d27df94de010d8e3e43bac20e31ab3f7213495ea` (the tip of this work) with this
-document's own in-flight edits in the working tree — no source, POM or test file differs from that commit.
+**The capture.** Commit `d27df94de010d8e3e43bac20e31ab3f7213495ea` with this document's own in-flight
+edits in the working tree. Later commits touch **only this document**, which is what makes the figures
+still applicable rather than stale: `git diff --name-only d27df94de..HEAD` and
+`git diff --name-only d27df94de` each list `doc/JAKARTA_MIGRATION_BASELINE.md` and nothing else, so no
+source, POM or test file differs between the captured tree and the one that ships.
 Run on **2026-08-01** on **JDK 21.0.11** (`OpenJDK Runtime Environment build 21.0.11+10-1-25.10.2-Ubuntu`)
 with **Apache Maven 3.9.9** via the repository's own `./mvnw`, against a **fully warmed** local repository,
 with `CI` **unset** so Spotless runs in `apply` mode exactly as a developer's build does. Four commands,
@@ -718,7 +721,7 @@ planning phase expected to be unable to run it, and why that limitation no longe
 The "pre-change" side is genuine without touching the working tree: the base commit's changelog bytes were
 materialised with `git archive 3934d8086`, and each of the **38** extracted files was verified against its
 working-tree counterpart with `cmp` — **38 identical, 0 differing**. Both sides were then installed into
-their own **disposable, clone-scoped** database by the **same** Liquibase engine — `liquibase-core`
+their own **disposable, per-run** database by the **same** Liquibase engine — `liquibase-core`
 **4.32.0** (`version 4.32.0 #8159 built at 2025-05-19`), resolved from the `api` module's own classpath so
 that engine parity between the two sides is guaranteed by construction — driving
 `liquibase-schema-only.xml` with the platform's own bookkeeping table names
@@ -754,16 +757,22 @@ text was rewritten, filtered or sorted.
 
 Three safety statements, because this ran against a shared server:
 
-- Only the two databases created for this comparison were ever written to. Their names are clone-scoped —
-  `openmrs_v3_{before,after}_<suffix>`, where the suffix is the first eight hex digits of the MD5 of the
-  checkout's absolute path, so two clones at the *same* commit still get distinct names; the recorded run
-  used `openmrs_v3_before_f079886d` and `openmrs_v3_after_f079886d`. The script refuses to start if either
-  composed name equals the shared database, and both are dropped by the cleanup trap.
+- Only the two databases created for this comparison were ever written to. Their names are
+  **per-run**, not per-checkout — `openmrs_v3_{before,after}_<run-id>`, where the run id is 48 bits read
+  from `/dev/urandom` on each invocation, so neither a second clone nor a second run from the *same*
+  clone can compose a colliding name; the recorded run used `openmrs_v3_before_eda88e4c8ddc` and
+  `openmrs_v3_after_eda88e4c8ddc`, and the script wrote exactly those two names to
+  `v3-evidence/created-databases.txt` as it created them. Each name is regex-validated, the script
+  refuses to start if either equals the shared database, and an `flock` prevents two runs from
+  overlapping at all.
 - The shared `openmrs` database was measured **before** the run and **after** cleanup and was identical
-  both times — **126 tables / 1,065 changesets** — with the comparison asserted by `cmp` inside the script
-  rather than eyeballed. A neighbouring clone's database (`openmrs_c002`) was never referenced.
-- Cleanup runs from a `trap … EXIT INT TERM`, so an interrupt or an early failure still drops both
-  disposable databases and removes the credentials file.
+  both times — **126 catalogued tables / 1,065 changesets** — with the comparison asserted by `cmp`
+  inside the script rather than eyeballed. "Catalogued tables" is the exact quantity the script counts:
+  all `information_schema.tables` rows for that schema, which here are 125 base tables plus one view.
+  A neighbouring clone's database (`openmrs_c002`) was never referenced.
+- Cleanup drops **only the databases this run actually created** and removes both credential files. It is
+  installed on `EXIT`, is idempotent, and never touches the exit status; `INT` and `TERM` have their own
+  handler that exits **130** / **143**, so an interrupted run can never be mistaken for a pass.
 
 Section (e).5 below sets out, independently of this measurement, the four structural reasons the diff
 **had** to be empty. The measurement and the reasoning agree.
@@ -801,13 +810,13 @@ was verified.
 
 ### 4. The Procedure
 
-> **Destructive-command warning.** This procedure creates, drops and recreates databases. Every
-> `DROP`/`CREATE` below is directed at a **name the script itself composes** from a clone-scoped suffix, and
-> the script **refuses to start** if either name equals the shared database. Never substitute `openmrs`, and
-> never point it at anything holding real data. The shared database is read **only** for the
-> before/after assertion in steps 1 and 8.
+> **Destructive-command warning.** This procedure creates and drops databases. Every `CREATE` and every
+> `DROP` below is directed at a **name the script itself composes** from a per-run random identifier, the
+> composed name is **regex-validated** before use, and the script **refuses to start** if either name
+> equals the shared database. Never substitute `openmrs`, and never point it at anything holding real
+> data. The shared database is read **only** for the before/after assertion in steps 3 and 10.
 
-This is the script that produced the measurements in (e).1 — not an outline of one. Four properties make
+This is the script that produced the measurements in (e).1 — not an outline of one. Five properties make
 it safe to publish and safe to re-run:
 
 - **Fail-fast with preserved status.** `set -euo pipefail`, and every step that can fail is wrapped in an
@@ -815,58 +824,136 @@ it safe to publish and safe to re-run:
   (with `set +e` around it, because a *non-zero* `diff` status is the failure signal, not a shell error)
   and the run's final verdict is derived from that captured value. **No later step can mask an earlier
   failure**, and cleanup cannot overwrite the verdict.
-- **Isolation.** Both sides live in disposable, clone-scoped databases created by the script. The shared
-  database is only ever read, and the pre/post readings are compared with `cmp` so drift fails the run.
-- **Trap-based cleanup.** `trap cleanup EXIT INT TERM` drops both disposable databases and removes the
-  credentials file even on interrupt or early exit, and it re-raises the original exit status.
+- **Isolation that fails closed, and cannot race another run.** Both sides live in disposable databases
+  whose names carry a **48-bit per-run identifier read from the kernel CSPRNG** — *per run*, not per
+  checkout, so two runs started from the same working tree cannot collide — and an `flock` on a single
+  lock file means two runs cannot even overlap. Creation uses a bare `CREATE DATABASE` with **no
+  preceding `DROP` and no `IF NOT EXISTS`**, so an unexpected name collision **aborts the run instead of
+  destroying whatever holds that name**. The shared database is only ever read, and the pre/post readings
+  are compared with `cmp` so drift fails the run.
+- **Cleanup owns only what this run created.** Each database name is appended to `CREATED_DBS` *after* its
+  `CREATE` succeeds, and cleanup drops **only** the names in that list — never a name merely composed,
+  and never another run's database.
+- **Signal handling that cannot report an interruption as a pass.** Cleanup is installed on **`EXIT`
+  only**, so it never inspects or alters `$?` and the verdict survives it; a `CLEANED` guard makes it
+  idempotent. `INT` and `TERM` have their own handler, which clears the traps, cleans up once, and exits
+  with the conventional **130** / **143**. A `trap cleanup EXIT INT TERM` that ends in `exit "$status"`
+  does *not* do this: measured on this host, the handler observes status **0**, the body runs **twice**,
+  and the process exits **0** — an interrupted schema comparison would be indistinguishable from a pass.
+  That earlier form, and the claim that it "re-raises the original exit status", are **withdrawn**.
 - **Evidence retention.** Both raw dumps, the normalised dumps, the `diff` output, the MD5 list, the
   per-side metrics and both Liquibase logs are written under an evidence directory *before* any cleanup,
   so the artifacts behind every figure in (e).1 outlive the run.
 
-Credentials go in a `--defaults-extra-file`, not on the command line. The `-u <user> -p<pw>` form that
-looks natural in prose is **not executable**: the shell reads `<user>` and `>` as input/output
-redirection, so the command fails before `mysqldump` ever starts. The file is created `chmod 600` and
-deleted with `rm -f` — that is **removal, not secure erasure**; if a shredding guarantee is required on
-the host in question, substitute `shred -u` (or keep the file on a `tmpfs`).
+**No credential appears in any argument.** Every argument of every process is world-readable through
+`/proc/<pid>/cmdline`, so a same-host or same-namespace observer can lift a password out of a running
+command; this was confirmed on this host rather than assumed. `mysql` and `mysqldump` therefore read a
+`--defaults-extra-file`, and **Liquibase reads a `--defaultsFile`** carrying `url`, `username`,
+`password`, `driver` and the changelog settings — a mechanism `liquibase.integration.commandline.Main`
+supports in the 4.32.0 the platform ships, verified by running it. An earlier revision of this script
+passed `--username=root --password="$DB_PASS"` to Liquibase while this prose claimed credentials never
+reach the command line; the command has been corrected to match the claim. The `-u <user> -p<pw>` form
+that looks natural in prose is **not executable** either: the shell reads `<user>` and `>` as
+input/output redirection, so the command fails before `mysqldump` ever starts.
+
+Both credential files are created with `umask 077` and `chmod 600`. The ordering matters more than the
+mode: the `EXIT` trap and the variables it reads are established **before `mktemp` runs**, and the secret
+is written only afterwards, so at no point does credential material exist that cleanup would not remove.
+The earlier revision created and populated the file first and installed the trap several lines later,
+leaving a window in which an I/O failure, a shell error or an interrupt could strand a plaintext password
+on disk. The files are also placed on a **`tmpfs`** (`/dev/shm`) when one is available, precisely so the
+secret need never reach persistent storage at all.
+
+> **Note:** `rm -f` **unlinks** the file; that is **not** erasure. `shred` is best-effort at best and
+> offers **no portable guarantee** — not on SSD or other flash translation layers, not on copy-on-write
+> or journaling filesystems, and not where snapshots or backups exist. The reliable mitigations are the
+> two this script uses: keep the secret off persistent storage (`tmpfs`), and scope it to a credential
+> that is disposable. An earlier revision of this document recommended substituting `shred -u` "if a
+> shredding guarantee is required"; that advice was wrong and is **withdrawn**.
 
 ```bash
   #!/usr/bin/env bash
   set -euo pipefail
 
   BASE_COMMIT=3934d8086c684269e935562f25e806be91947115
-  SUFFIX="$(printf '%s' "$PWD" | md5sum | cut -c1-8)"   # per-checkout; keeps parallel clones apart
-  DB_BEFORE="openmrs_v3_before_$SUFFIX"       # disposable
-  DB_AFTER="openmrs_v3_after_$SUFFIX"         # disposable
-  SHARED_DB=openmrs                           # READ-ONLY here. Never a DROP/CREATE target.
   DB_HOST=127.0.0.1; DB_PORT=3306
-  EVIDENCE=./v3-evidence; mkdir -p "$EVIDENCE"
+  SHARED_DB=openmrs                           # READ-ONLY here. Never a DROP/CREATE target.
+  EVIDENCE=./v3-evidence
+  : "${DB_PASS:?export DB_PASS before running; no credential is written into this document}"
 
-  # 0. Credentials once, in a private file. Never inline them, never use -p<pw>.
-  MYSQL_CNF="$(mktemp)"; chmod 600 "$MYSQL_CNF"
-  printf '[client]\nuser=root\npassword=%s\nhost=%s\nport=%s\n' "$DB_PASS" "$DB_HOST" "$DB_PORT" > "$MYSQL_CNF"
+  # 0. Declare everything cleanup owns, then install the traps - BEFORE any secret exists
+  #    and before any database exists. There is no window in which either is unowned.
+  MYSQL_CNF=; LB_CNF=; CREATED_DBS=(); CLEANED=0
 
-  # Cleanup ALWAYS runs and NEVER changes the verdict: it preserves $? and re-exits with it.
-  cleanup() {
-    status=$?; set +e
-    mysql --defaults-extra-file="$MYSQL_CNF" \
-      -e "DROP DATABASE IF EXISTS \`$DB_BEFORE\`; DROP DATABASE IF EXISTS \`$DB_AFTER\`;" \
-      >> "$EVIDENCE/cleanup.log" 2>&1
-    rm -f "$MYSQL_CNF"          # removal, not secure erasure - see the note above
-    exit "$status"
+  cleanup() {                 # EXIT only: it never inspects or alters $?, so it cannot
+    if [ "$CLEANED" -eq 1 ]; then return 0; fi   # overwrite the verdict, and never runs twice
+    CLEANED=1
+    set +e
+    local db f
+    if [ "${#CREATED_DBS[@]}" -gt 0 ] && [ -n "$MYSQL_CNF" ]; then
+      for db in "${CREATED_DBS[@]}"; do          # drop ONLY what this run created
+        mysql --defaults-extra-file="$MYSQL_CNF" \
+          -e "DROP DATABASE IF EXISTS \`$db\`;" >> "$EVIDENCE/cleanup.log" 2>&1
+      done
+    fi
+    for f in "$MYSQL_CNF" "$LB_CNF"; do
+      if [ -n "$f" ]; then rm -f "$f"; fi        # unlink, NOT erasure - see the note above
+    done
   }
-  trap cleanup EXIT INT TERM
 
-  # Guard: never operate on the shared database.
+  on_signal() {               # INT/TERM: clean up once, then exit 128+signo - never 0
+    local signo="$1"
+    trap - EXIT INT TERM
+    cleanup
+    printf 'INTERRUPTED by signal %s: this run is NOT a pass\n' "$signo" >&2
+    exit "$((128 + signo))"
+  }
+
+  trap cleanup EXIT
+  trap 'on_signal 2'  INT
+  trap 'on_signal 15' TERM
+
+  mkdir -p "$EVIDENCE"
+  : > "$EVIDENCE/created-databases.txt"   # start empty: this file describes THIS run only
+
+  # 1. Per-RUN identity (48 bits from the kernel CSPRNG), not per-checkout: two runs from
+  #    the same working tree can never collide. The lock means they cannot even overlap.
+  RUN_ID="$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+  DB_BEFORE="openmrs_v3_before_$RUN_ID"
+  DB_AFTER="openmrs_v3_after_$RUN_ID"
   for d in "$DB_BEFORE" "$DB_AFTER"; do
-    [ "$d" = "$SHARED_DB" ] && { echo "FATAL: disposable name equals shared database" >&2; exit 1; }
+    if [ "$d" = "$SHARED_DB" ] || ! [[ "$d" =~ ^openmrs_v3_(before|after)_[0-9a-f]{12}$ ]]; then
+      echo "FATAL: refusing to operate on database name '$d'" >&2; exit 1
+    fi
   done
+  LOCK_FILE="${TMPDIR:-/tmp}/openmrs-v3-schema-diff.lock"
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    echo "FATAL: another comparison run holds $LOCK_FILE" >&2; exit 1
+  fi
 
-  # 1. Shared database pre-state - READ ONLY. Re-checked identical in step 8.
+  # 2. Credentials: off argv entirely, and off persistent storage where a tmpfs exists.
+  CRED_DIR="${TMPDIR:-}"
+  if [ -z "$CRED_DIR" ]; then
+    if [ "$(stat -f -c %T /dev/shm 2>/dev/null)" = tmpfs ] && [ -w /dev/shm ]; then
+      CRED_DIR=/dev/shm                        # tmpfs: the secret never reaches a disk
+    else
+      CRED_DIR=/tmp                            # removal is not erasure - see the note
+    fi
+  fi
+  umask 077
+  MYSQL_CNF="$(mktemp "$CRED_DIR/openmrs-v3-mysql.XXXXXXXX")"
+  LB_CNF="$(mktemp "$CRED_DIR/openmrs-v3-liquibase.XXXXXXXX")"
+  chmod 600 "$MYSQL_CNF" "$LB_CNF"
+  printf '[client]\nuser=root\npassword=%s\nhost=%s\nport=%s\n' \
+    "$DB_PASS" "$DB_HOST" "$DB_PORT" > "$MYSQL_CNF"
+
+  # 3. Shared database pre-state - READ ONLY. Re-checked identical in step 10.
   mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
     "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$SHARED_DB'), \
             (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" > "$EVIDENCE/shared-db-before.txt"
 
-  # 2. Materialise the BASE-COMMIT changelog bytes without touching the working tree,
+  # 4. Materialise the BASE-COMMIT changelog bytes without touching the working tree,
   #    and prove byte-for-byte equality with the current tree.
   mkdir -p base-changelogs
   git archive "$BASE_COMMIT" -- 'api/src/main/resources/liquibase-*.xml' \
@@ -877,9 +964,9 @@ the host in question, substitute `shred -u` (or keep the file on a `tmpfs`).
     rel="${f#"$BASE_ROOT"/}"
     cmp -s "$f" "api/src/main/resources/$rel" || { echo "DIFFERS: $rel"; diffcount=$((diffcount+1)); }
   done < <(find "$BASE_ROOT" -name 'liquibase-*.xml' | sort)
-  [ "$diffcount" -eq 0 ] || { echo "FATAL: changelog bytes are not frozen" >&2; exit 1; }
+  if [ "$diffcount" -ne 0 ]; then echo "FATAL: changelog bytes are not frozen" >&2; exit 1; fi
 
-  # 3. Resolve the SAME engine for both sides: liquibase-core 4.32.0 off the api classpath.
+  # 5. Resolve the SAME engine for both sides: liquibase-core 4.32.0 off the api classpath.
   #    mdep.outputFile MUST be absolute: with -pl it is otherwise resolved against the
   #    module basedir and lands in api/, not here.
   CP_FILE="$PWD/api_cp.txt"
@@ -888,21 +975,27 @@ the host in question, substitute `shred -u` (or keep the file on a `tmpfs`).
   grep -q 'liquibase-core/4\.32\.0/' "$CP_FILE" || { echo "FATAL: wrong engine" >&2; exit 1; }
   CP="$(cat "$CP_FILE")"
 
-  # 4-6. Install and dump each side. $1 = database, $2 = changelog resource root, $3 = label.
+  # 6-8. Install and dump each side. $1 = database, $2 = changelog resource root, $3 = label.
   run_side() {
     local db="$1" root="$2" label="$3"
-    if ! mysql --defaults-extra-file="$MYSQL_CNF" -e \
-      "DROP DATABASE IF EXISTS \`$db\`; CREATE DATABASE \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
-    then echo "FATAL: could not create $db" >&2; exit 1; fi
 
-    # Explicit disposable URL - the liquibase/pom.xml <url> points at the SHARED database
-    # and must never be used unoverridden. The changelog table names match DatabaseUpdater.
+    # Fail CLOSED: no DROP first and no IF NOT EXISTS, so an unexpected name collision
+    # aborts the run instead of destroying whatever already holds that name.
+    if ! mysql --defaults-extra-file="$MYSQL_CNF" -e \
+      "CREATE DATABASE \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+    then echo "FATAL: could not create $db - a name collision aborts the run" >&2; exit 1; fi
+    CREATED_DBS+=("$db")     # only now, having created it, does cleanup own this name
+    printf '%s\n' "$db" >> "$EVIDENCE/created-databases.txt"   # auditable: what this run owns
+
+    # Credentials AND the target URL go in the mode-600 defaults file, never in argv:
+    # every argument is world-readable through /proc/<pid>/cmdline. The explicit URL is
+    # also what keeps liquibase/pom.xml's shared-database <url> from being inherited.
+    # The changelog table names match DatabaseUpdater.
+    printf 'url=jdbc:mysql://%s:%s/%s\nusername=root\npassword=%s\ndriver=com.mysql.cj.jdbc.Driver\nchangeLogFile=liquibase-schema-only.xml\ndatabaseChangelogTableName=liquibasechangelog\ndatabaseChangelogLockTableName=liquibasechangeloglock\nlogLevel=warning\n' \
+      "$DB_HOST" "$DB_PORT" "$db" "$DB_PASS" > "$LB_CNF"
+
     if ! java -cp "$root:$CP" liquibase.integration.commandline.Main \
-        --logLevel=warning --driver=com.mysql.cj.jdbc.Driver \
-        --url="jdbc:mysql://$DB_HOST:$DB_PORT/$db" --username=root --password="$DB_PASS" \
-        --databaseChangelogTableName=liquibasechangelog \
-        --databaseChangelogLockTableName=liquibasechangeloglock \
-        --changeLogFile=liquibase-schema-only.xml update > "$EVIDENCE/liquibase-update-$label.log" 2>&1
+        --defaultsFile="$LB_CNF" update > "$EVIDENCE/liquibase-update-$label.log" 2>&1
     then echo "FATAL: liquibase update failed for $label" >&2; exit 1; fi
 
     mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e "
@@ -919,35 +1012,41 @@ the host in question, substitute `shred -u` (or keep the file on a `tmpfs`).
   run_side "$DB_BEFORE" "$BASE_ROOT"              before
   run_side "$DB_AFTER"  api/src/main/resources    after
 
-  # 7. Compare. The name substitution is a documented NO-OP for a single-database dump
+  # 9. Compare. The name substitution is a documented NO-OP for a single-database dump
   #    (no CREATE DATABASE / USE is emitted); it is kept only so the step is explicit.
   sed "s/\`$DB_BEFORE\`/\`DBNAME\`/g" "$EVIDENCE/schema-before.sql" > "$EVIDENCE/schema-before.norm.sql"
   sed "s/\`$DB_AFTER\`/\`DBNAME\`/g"  "$EVIDENCE/schema-after.sql"  > "$EVIDENCE/schema-after.norm.sql"
   set +e
   diff "$EVIDENCE/schema-before.norm.sql" "$EVIDENCE/schema-after.norm.sql" > "$EVIDENCE/schema.diff"
-  DIFF_STATUS=$?          # captured, asserted in step 9 - never discarded
+  DIFF_STATUS=$?          # captured, asserted in step 11 - never discarded
   set -e
   md5sum "$EVIDENCE"/schema-*.sql > "$EVIDENCE/checksums.txt"
 
-  # 8. Shared database post-state must equal the pre-state. Asserted, not eyeballed.
+  # 10. Shared database post-state must equal the pre-state. Asserted, not eyeballed.
   mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
     "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$SHARED_DB'), \
             (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" > "$EVIDENCE/shared-db-after.txt"
   cmp -s "$EVIDENCE/shared-db-before.txt" "$EVIDENCE/shared-db-after.txt" \
     || { echo "FATAL: the shared database changed" >&2; exit 1; }
 
-  # 9. Verdict from the CAPTURED status. Expected: 0, with an empty schema.diff.
-  [ "$DIFF_STATUS" -eq 0 ] || { echo "FAIL: schemas differ - see $EVIDENCE/schema.diff" >&2; exit 1; }
+  # 11. Verdict from the CAPTURED status. Expected: 0, with an empty schema.diff.
+  if [ "$DIFF_STATUS" -ne 0 ]; then
+    echo "FAIL: schemas differ - see $EVIDENCE/schema.diff" >&2; exit 1
+  fi
   echo "PASS: schemas identical"
 ```
 
 `$DB_PASS` is supplied by the operator from the environment (the containerised development server in
-`docker-compose.yml` uses the project's default), so no credential is written into this document.
+`docker-compose.yml` uses the project's default), so no credential is written into this document. The
+script refuses to start without it — `: "${DB_PASS:?…}"` — rather than silently attempting a passwordless
+connection.
 
 The run leaves three byproducts in the working tree — `api_cp.txt`, `base-changelogs/` and the
-`v3-evidence/` directory. The first two are scratch; the third is the retained evidence the figures in
-(e).1 come from. None of them belongs in a commit, so delete them (or add them to a local exclude) once
-the evidence has been read.
+`v3-evidence/` directory — and one zero-byte lock file under `$TMPDIR`. The first two are scratch; the
+third is the retained evidence the figures in (e).1 come from. None of them belongs in a commit, so delete
+them (or add them to a local exclude) once the evidence has been read. **Leave the lock file where it is**:
+it holds no data, and removing it while another run is in flight would break the mutual exclusion it
+exists to provide.
 
 ### 5. Why the Diff Is Empty by Construction
 
@@ -1036,9 +1135,15 @@ load-bearing for **four** columns rather than three; all four are `VARCHAR` colu
 recorded with their invocations and expectations but **were not run**:
 
 ```bash
-  ./mvnw verify -Pintegration-test -B     # documented, NOT executed here
-  ./mvnw verify -Pperformance-test -B     # documented, NOT executed here
+  ./mvnw verify -Pintegration-test -Pskip-default-test -B   # documented, NOT executed here
+  ./mvnw verify -Pperformance-test -Pskip-default-test -B   # documented, NOT executed here
 ```
+
+`-Pskip-default-test` is not optional decoration. Each of those profiles *adds* a Surefire execution bound
+to the `test` phase (`**/*IT.java` and `**/*DatabaseIT.java` for the first, `**/*PerformanceIT.java` for
+the second) without disabling the `default-test` execution, so omitting it re-runs the entire 5,106-test
+default suite ahead of the integration or performance tests. `skip-default-test` sets `skipTests` on the
+`default-test` execution alone, which is what leaves only the profile's own tests running.
 
 ## Section (f): Test-Infrastructure Adaptations
 
@@ -1390,19 +1495,22 @@ jar is used.
   #   per module: openmrs-api 4,929/0/0/45 - openmrs-web 146/0/0/0
   #               openmrs-liquibase 24/0/0/0 - test-suite-module-api 6/0/0/0
   #               test-suite-module-omod 1/0/0/0
-  ./mvnw verify -Pintegration-test -B          # documented, NOT executed here
-  ./mvnw verify -Pperformance-test -B          # documented, NOT executed here
+  #   -Pskip-default-test is required: both profiles ADD a test-phase Surefire
+  #   execution without disabling default-test, so omitting it re-runs all 5,106
+  ./mvnw verify -Pintegration-test -Pskip-default-test -B   # documented, NOT executed here
+  ./mvnw verify -Pperformance-test -Pskip-default-test -B   # documented, NOT executed here
 
   # V3 - clean-database Liquibase run and mysqldump --no-data diff
   #      EXECUTED. Both sides installed by liquibase-core 4.32.0 into their OWN disposable,
-  #      clone-scoped database with an explicit --url per side - the "before" side from
+  #      per-run database, each driven by a mode-600 --defaultsFile that carries the
+  #      explicit URL and the credentials so nothing reaches argv - the "before" side from
   #      `git archive 3934d8086`-extracted changelog bytes, cmp-verified 38 identical /
   #      0 differing - then dumped with
   #        mysqldump --no-data --skip-comments --skip-dump-date
   #      and compared. Result: diff exit status 0, zero differing lines, both dumps
   #      byte-identical at MD5 659f521033a44a4b95e57fe0bbe105a9, 119 tables / 1,510
   #      columns / 697 indexes / 446 foreign keys / 1,028 changesets on each side, and the
-  #      shared `openmrs` database asserted unchanged at 126 tables / 1,065 changesets.
+  #      shared `openmrs` database asserted unchanged at 126 catalogued tables / 1,065 changesets.
   #      The full runnable script, its safety properties and the retained evidence files
   #      are in section (e).4.
 
@@ -1533,13 +1641,14 @@ The same shape applies to V5, A1, A4 and A5. Every "expect 0 matches" comment in
       the byte-identical verify-only root `pom.xml` are not files this change may annotate. See the
       "where each item is recorded" table in the Pre-Existing Defect Register.
 - [x] The clean-database Liquibase run and `mysqldump --no-data` schema diff — **executed**, not merely
-      documented: two disposable, clone-scoped databases installed by `liquibase-core` 4.32.0 from
+      documented: two disposable, per-run databases installed by `liquibase-core` 4.32.0 from
       base-commit and current changelog bytes, both dumped and compared. **`diff` exit status 0, zero
       differing lines, both dumps byte-identical at MD5 `659f521033a44a4b95e57fe0bbe105a9`
       (3,389 lines / 175,156 bytes each), 119 tables / 1,510 columns / 697 indexes / 446 foreign keys /
       1,028 changesets on each side, and the shared `openmrs` database asserted unchanged at
-      126 tables / 1,065 changesets.** The runnable script, its fail-fast/trap/isolation properties and the
-      retained evidence files are in section (e).4.
+      126 catalogued tables / 1,065 changesets.** The runnable script — no credential in argv, fail-closed creation
+      under an `flock`, an idempotent `EXIT`-only cleanup that owns only what it created, and `INT`/`TERM`
+      handlers that exit 130/143 — and the retained evidence files are in section (e).4.
 
 ## Further Reading
 
