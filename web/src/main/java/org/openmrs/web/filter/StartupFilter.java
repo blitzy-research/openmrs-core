@@ -39,7 +39,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.VelocityEngine;
 import org.apache.velocity.runtime.RuntimeConstants;
@@ -66,8 +65,6 @@ import org.openmrs.web.filter.util.LocalizationTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
-import org.springframework.web.multipart.MultipartException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -128,24 +125,7 @@ public abstract class StartupFilter implements Filter {
 			        .setStatus(isOpenmrsAlive ? HttpServletResponse.SC_OK : HttpServletResponse.SC_SERVICE_UNAVAILABLE);
 
 		} else if (skipFilter((HttpServletRequest) request)) {
-			try {
-				chain.doFilter(request, response);
-			} catch (MaxUploadSizeExceededException e) {
-				// The request body is larger than the limit declared by <multipart-config> in web.xml.
-				// The exception message repeats that configured limit, so it is logged rather than sent
-				// back: a caller that learns the limit can size requests to sit just below it.
-				rejectUnreadableRequestBody((HttpServletRequest) request, (HttpServletResponse) response,
-				    HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, e);
-			} catch (MultipartException e) {
-				// A multipart body that cannot be parsed is a malformed request, not a server fault. The
-				// multipart filter runs ahead of Spring's DispatcherServlet, so neither a
-				// HandlerExceptionResolver nor a @ControllerAdvice ever sees this exception; without this
-				// catch it escapes the filter chain and the container answers 500 for what is a client
-				// error. This filter is the outermost OpenMRS filter in the chain, so it is the first
-				// place able to report the correct status.
-				rejectUnreadableRequestBody((HttpServletRequest) request, (HttpServletResponse) response,
-				    HttpServletResponse.SC_BAD_REQUEST, e);
-			}
+			chain.doFilter(request, response);
 		} else {
 
 			HttpServletRequest httpRequest = (HttpServletRequest) request;
@@ -381,52 +361,6 @@ public abstract class StartupFilter implements Filter {
 	 * @return true if this filter can be skipped
 	 */
 	public abstract boolean skipFilter(HttpServletRequest request);
-
-	/**
-	 * Answers a request whose body the container could not read with a status code only, and records
-	 * the cause in the server log so that an administrator can still diagnose it. The body of the
-	 * response is produced by the &lt;error-page&gt; declarations in web.xml, which point at a static
-	 * page, so no detail of the failure or of the server internals reaches the caller.
-	 *
-	 * @param httpRequest the request whose body could not be read
-	 * @param httpResponse the response to report the failure on
-	 * @param status the status code to report, from {@link HttpServletResponse}
-	 * @param cause the failure to log
-	 * @throws IOException if the status code cannot be written to the response
-	 */
-	private static void rejectUnreadableRequestBody(HttpServletRequest httpRequest, HttpServletResponse httpResponse,
-	        int status, Exception cause) throws IOException {
-		log.warn("Rejecting {} request for {} with status {} because its body could not be read", httpRequest.getMethod(),
-		    httpRequest.getRequestURI(), status, cause);
-
-		// a partially written response cannot be replaced by an error page any more
-		if (!httpResponse.isCommitted()) {
-			httpResponse.sendError(status);
-		}
-	}
-
-	/**
-	 * Tells whether a request is the ajax poll that the wizard's progress page makes, which both the
-	 * initialization and the update wizard have to recognise before deciding whether they apply.
-	 * <p>
-	 * The check needs a request parameter, and reading a parameter makes the servlet container parse
-	 * the request body. A body the container cannot parse - a malformed or oversized multipart upload,
-	 * for instance - therefore fails inside this decision, ahead of every handler that could turn it
-	 * into a controlled response. The progress page polls with an ordinary ajax request and never with
-	 * a multipart one, so a multipart request is answered here without touching the parameters at all.
-	 *
-	 * @param httpRequest the request being filtered
-	 * @param progressPageParameterValue the value that the "page" parameter carries on a progress poll
-	 * @return true if this request is the progress page's ajax poll
-	 * @since 3.0.0
-	 */
-	protected static boolean isProgressPageAjaxRequest(HttpServletRequest httpRequest, String progressPageParameterValue) {
-		if (StringUtils.startsWithIgnoreCase(httpRequest.getContentType(), "multipart/")) {
-			return false;
-		}
-
-		return progressPageParameterValue.equals(httpRequest.getParameter("page"));
-	}
 
 	/**
 	 * Convenience method to read the last 5 log lines from the MemoryAppender The log lines will be

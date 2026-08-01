@@ -83,16 +83,6 @@ public class ModuleResourcesServlet extends HttpServlet {
 
 		String path = request.getPathInfo();
 
-		// A request such as "/moduleResources/" (or "/moduleResources") carries a path info that cannot
-		// name a module resource at all. ModuleUtil.getModuleForPath requires the "/moduleId/resource"
-		// shape and throws IllegalArgumentException for anything else, which would otherwise escape this
-		// servlet as an uncontrolled HTTP 500 that discloses internal class and line information.
-		// Validate the shape here so that a malformed path is answered with a plain 404 instead.
-		if (!isResolvableModuleResourcePath(path)) {
-			log.warn("Ignoring request with a malformed module resource path: {}", path);
-			return null;
-		}
-
 		Module module = ModuleUtil.getModuleForPath(path);
 		if (module == null) {
 			log.warn("No module handles the path: " + path);
@@ -128,28 +118,6 @@ public class ModuleResourcesServlet extends HttpServlet {
 		}
 
 		return f;
-	}
-
-	/**
-	 * Tells whether the given request path info can possibly identify a resource inside a module.
-	 * <p>
-	 * {@link ModuleUtil#getModuleForPath(String)} contractually requires the {@code /moduleId/resource}
-	 * shape and signals anything else with an {@link IllegalArgumentException}. Because this servlet is
-	 * mapped to {@code /moduleResources/*}, a client can trivially request a path info of {@code null}
-	 * or {@code "/"}, so the shape is validated before delegating rather than letting a runtime
-	 * exception propagate out of the servlet container.
-	 *
-	 * @param path the value of {@link HttpServletRequest#getPathInfo()}, possibly null
-	 * @return true only when the path carries both a module id segment and a resource segment
-	 */
-	private static boolean isResolvableModuleResourcePath(String path) {
-		if (path == null || path.isEmpty()) {
-			return false;
-		}
-
-		// getModuleForPath splits on the last '/'; it needs at least one character of module id before it,
-		// which means the separator must appear at index 1 or later.
-		return path.lastIndexOf('/') > 0;
 	}
 
 }

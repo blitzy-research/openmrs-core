@@ -1084,10 +1084,8 @@ public class InitializationFilter extends StartupFilter {
 	public boolean skipFilter(HttpServletRequest httpRequest) {
 		// If progress.vm makes an ajax request even immediately after initialization has completed
 		// let the request pass in order to let progress.vm load the start page of OpenMRS
-		// (otherwise progress.vm is displayed "forever").
-		// The poll is recognised through StartupFilter#isProgressPageAjaxRequest so that reading the
-		// "page" parameter never forces the container to parse a request body it cannot parse.
-		return !isProgressPageAjaxRequest(httpRequest, PROGRESS_VM_AJAXREQUEST) && !initializationRequired();
+		// (otherwise progress.vm is displayed "forever")
+		return !PROGRESS_VM_AJAXREQUEST.equals(httpRequest.getParameter("page")) && !initializationRequired();
 	}
 
 	/**
