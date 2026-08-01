@@ -99,8 +99,11 @@ and it is not an obscure one:
   git rev-parse 9124e3dab^                                   ->  2cbf9d7f8762451bdf253455c6e988eef732b843
 ```
 
-It is the **direct parent of `9124e3dab`**, the commit that created this document — the seventh of the nine
-commits on top of the base commit. No figure in this document was ever derived from a failed lookup; the
+It is the **direct parent of `9124e3dab`**, the commit that created this document. That relationship is
+stated without an ordinal or a total on purpose: an earlier revision called it "the seventh of the nine
+commits on top of the base commit", and the total was already wrong when it was written and goes wrong again
+with every commit added. `git rev-parse 9124e3dab^` is the form of the claim that cannot go stale, which is
+why it is the form quoted above. No figure in this document was ever derived from a failed lookup; the
 erroneous sentence was a wrong claim about Git history, not a corrupted measurement.
 
 **Which baseline supports which measurement.** The two candidate baselines are not interchangeable, and the
@@ -112,11 +115,17 @@ difference between them is exactly one file:
 | `2cbf9d7f8762451bdf253455c6e988eef732b843` | the tree with **all** code and configuration changes already applied and this evidence document not yet written | the review pass that nominated it; **no measurement in this document is taken against it** |
 
 That second row carries a consequence worth stating, because it makes the choice of baseline immaterial for
-every code claim: `git diff --name-status 2cbf9d7f8..HEAD` reports exactly **one** path,
-`A doc/JAKARTA_MIGRATION_BASELINE.md`, while `git diff --name-status 3934d8086..2cbf9d7f8` reports the
-other **18** — every POM, descriptor, Java and `NOTICE.md` edit in this work. So **all 18 code and
-configuration changes are already present at `2cbf9d7f8`**, and any build, test, dependency-tree or schema
-measurement taken there is identical to one taken at HEAD. A review comparing against `2cbf9d7f8` and this
+every code claim. `git diff --name-status 3934d8086..2cbf9d7f8` reports **18** paths — every POM,
+descriptor, Java and `NOTICE.md` edit in this work — so **all 18 code and configuration changes are already
+present at `2cbf9d7f8`**. Comparing forward from there, `git diff --name-status 2cbf9d7f8` reports **four**:
+this document, added; and the three Spring context descriptors whose leading indentation was subsequently
+restored to its pre-`1f5303b89` form — one changed line each in `applicationContext-service.xml` and
+`openmrs-servlet.xml`, seven in `webModuleApplicationContext.xml`, with every file byte-identical to its
+`1f5303b89^` state. Those three edits are whitespace-only and cannot move a build, test, dependency-tree or
+schema measurement, so a measurement taken at `2cbf9d7f8` still agrees with one taken here. Note the
+working-tree form of that command, without `..HEAD`: it reports the same four paths whether or not the final
+commit has yet landed, whereas the `..HEAD` form reported **one** path while those three restorations were
+still uncommitted and would have quietly become wrong. A review comparing against `2cbf9d7f8` and this
 document comparing against `3934d8086` therefore see the same code; only the "pre" side differs, and only
 `3934d8086` gives a genuine pre-change "pre" side.
 
@@ -146,30 +155,49 @@ it, and the total was summed arithmetically rather than transcribed.
 ### 1. Build Measurements
 
 Every figure below comes from **one identifiable capture**, described in full so it can be checked rather
-than taken on trust. An earlier revision of this section reported an `install` of 1:21 and a `test` of
-10:07 without saying which run produced them; those figures are replaced here by a single, fully attributed
-set.
+than taken on trust. Earlier revisions of this section twice failed that standard — first reporting an
+`install` of 1:21 and a `test` of 10:07 without saying which run produced them, then attributing a set of
+figures to a commit whose tree had since stopped matching the one that ships. Both are superseded here by a
+single set re-measured against the tree as it actually stands.
 
-**The capture.** Commit `d27df94de010d8e3e43bac20e31ab3f7213495ea` with this document's own in-flight
-edits in the working tree. Later commits touch **only this document**, which is what makes the figures
-still applicable rather than stale: `git diff --name-only d27df94de..HEAD` and
-`git diff --name-only d27df94de` each list `doc/JAKARTA_MIGRATION_BASELINE.md` and nothing else, so no
-source, POM or test file differs between the captured tree and the one that ships.
+**The capture.** Commit `4192f776306ea2d5c8a362c93b6142faa1df3054` plus this change's own four modified
+files in the working tree, which `git diff --name-only HEAD` enumerates in full: the three Spring context
+descriptors whose leading indentation was restored
+(`api/src/main/resources/applicationContext-service.xml`, `web/src/main/resources/openmrs-servlet.xml` and
+`test-suite/module/omod/src/main/resources/webModuleApplicationContext.xml`) plus this document. Nothing
+else differs — no other source, POM, resource or test file — so the captured tree **is** the tree that
+ships, and the figures need no argument about whether later edits invalidated them.
 Run on **2026-08-01** on **JDK 21.0.11** (`OpenJDK Runtime Environment build 21.0.11+10-1-25.10.2-Ubuntu`)
 with **Apache Maven 3.9.9** via the repository's own `./mvnw`, against a **fully warmed** local repository,
 with `CI` **unset** so Spotless runs in `apply` mode exactly as a developer's build does. Four commands,
 run in this order, each captured to its own log:
 
-| # | Command | Result | Maven `Total time` | Exit |
-|---|---|---|---|---|
-| 1 | `./mvnw -B clean install -DskipTests` | `BUILD SUCCESS`, **13 of 13** reactor projects `SUCCESS` | **01:21 min** | **0** |
-| 2 | `./mvnw -B test` | `BUILD SUCCESS`, **5,106 run / 0 failures / 0 errors / 45 skipped**, 13 of 13 `SUCCESS` | **09:53 min** | **0** |
-| 3 | `./mvnw -B dependency:tree` | `BUILD SUCCESS`, **1,620 lines**, **zero** `javax.` occurrences of any kind | **2.405 s** | **0** |
-| 4 | `./mvnw -B spotless:check -Dspotless.check.skip=false` | `BUILD SUCCESS`, **0 violations** | **2.024 s** | **0** |
+| # | Command | Result | `Total time`, run 1 | `Total time`, run 2 | Exit |
+|---|---|---|---|---|---|
+| 1 | `./mvnw -B clean install -DskipTests` | `BUILD SUCCESS`, **13 of 13** reactor projects `SUCCESS` | **01:20 min** | **01:21 min** | **0** |
+| 2 | `./mvnw -B test` | `BUILD SUCCESS`, **5,106 run / 0 failures / 0 errors / 45 skipped**, 13 of 13 `SUCCESS` | **10:42 min** | **10:47 min** | **0** |
+| 3 | `./mvnw -B dependency:tree` | `BUILD SUCCESS`, **1,620 lines**, **zero** `javax.` occurrences of any kind | **2.474 s** | **2.389 s** | **0** |
+| 4 | `./mvnw -B spotless:check -Dspotless.check.skip=false` | `BUILD SUCCESS`, **0 violations**, **1,273** `.java` files reported clean | **2.276 s** | **1.749 s** | **0** |
+
+**Why two runs are published, and why a single wall clock would have been a figure you could not check.**
+All four commands were executed twice, on the same tree and the same host: run 1 when this evidence was
+first captured, run 2 as an independent re-execution of the whole A1-A10 gate block against the final
+bytes. Every *outcome* column reproduced **exactly** — 13 of 13, 5,106 / 0 / 0 / 45, 1,620 tree lines,
+zero `javax.`, zero violations, 1,273 files clean — while every *wall clock* moved slightly, by +1 s,
++5 s, −85 ms and −527 ms respectively. That is the honest shape of this measurement, and it carries a
+practical warning: gate A8 **overwrites** `install.log` and `test.log`, so anyone who re-runs it will
+find timings that differ from run 1 in the second decimal place and will *not* find run 1's exact
+figures in the logs any more. Only the outcomes are asserted to be reproducible; the wall clocks are
+published as a pair precisely so that no reader mistakes one uncontrolled sample for a benchmark, and
+so that a re-run producing 01:21 rather than 01:20 is visibly expected rather than a contradiction.
 
 Command 2 is the run behind the **post-change** columns of the per-module test table at the head of this
-section. Its wall clock is dominated by two modules: `openmrs-api` **07:59 min** and `openmrs-web`
-**01:24 min**, with the remaining eleven reactor projects totalling under 30 seconds between them.
+section, and its 5,106 total is a sum of the five `Results:` blocks rather than a transcription: 4,929 +
+146 + 24 + 6 + 1, with the 45 skips all in `openmrs-api`. Its wall clock is dominated by two modules —
+`openmrs-api` **08:49 min** and `openmrs-web` **01:23 min** — with the remaining eleven reactor projects
+totalling **28.752 s** between them. Run 2 reproduced that distribution rather than the exact numbers:
+`openmrs-api` **08:53 min**, `openmrs-web` **01:24 min**, the other eleven **29.251 s**. In both runs the
+two heavy modules account for the same share of the total and the per-module test counts are identical.
 
 > **On comparing wall clocks — this document does not.** The pre-change figures (`install` 2:16, `test`
 > 10:17) were taken during planning on a different day, and the post-change figures above were taken on a
@@ -719,23 +747,53 @@ planning phase expected to be unable to run it, and why that limitation no longe
   binaries `mysqld` and `mariadbd` are absent, because the server runs in a container.
 
 The "pre-change" side is genuine without touching the working tree: the base commit's changelog bytes were
-materialised with `git archive 3934d8086`, and each of the **38** extracted files was verified against its
-working-tree counterpart with `cmp` — **38 identical, 0 differing**. Both sides were then installed into
+materialised with `git archive 3934d8086`, and the two trees were then compared in two stages, because
+byte equality alone is not sufficient evidence. First the **sorted file sets** were compared — `diff -u`
+of the base and current `find`-and-`sort` listings produced **zero lines**, so no changelog was added,
+removed or renamed on either side — and only then was each of the **38** files compared with `cmp`:
+**38 compared, 0 differing**. The two-stage order matters, and the earlier single-stage form is
+**withdrawn**: a loop driven by the base listing cannot, even in principle, notice a changelog that exists
+only in the current tree.
+
+The two sides are also **symmetric in what they expose to the engine**, which an earlier revision was not.
+That revision handed the current side the whole live resource root, `api/src/main/resources` — which
+carries far more than changelogs, including `META-INF/services` registrations for
+`liquibase.logging.LogService`, `liquibase.change.Change`, `liquibase.sqlgenerator.SqlGenerator` and
+`liquibase.datatype.LiquibaseDataType` whose implementing classes live in the `api` module's own output
+and are therefore **absent** from a dependency-only classpath. The measurable consequence was visible in
+the retained evidence: that side raised `java.util.ServiceConfigurationError: liquibase.logging.LogService:
+Provider liquibase.ext.logging.slf4j.Slf4JLogService not found`, fell back to `java.util.logging`, and
+produced a **1,304-line** log against the other side's **1,169** — a difference in log plumbing, not in
+DDL, but a difference in something other than the changelog bytes under comparison, which is exactly what
+this comparison must not have. The current side is now materialised into a root holding the changelog
+closure and nothing else (`liquibase-*.xml` plus `org/openmrs/liquibase/**`, copied from the working tree
+and re-verified file-by-file with `cmp` — **38 copied, 0 differing**), so the only difference between the
+two roots is the bytes being compared. The payoff is a much stronger assertion, which the script now makes
+and which passed: **with timestamps stripped, the two engine logs are identical** — `diff` produced
+**0 lines** over **1,169 lines each** — so the same 1,028 changesets ran in the same order and emitted the
+same 116 warnings on both sides, and neither log contains a `ServiceConfigurationError`.
+
+Both sides were then installed into
 their own **disposable, per-run** database by the **same** Liquibase engine — `liquibase-core`
 **4.32.0** (`version 4.32.0 #8159 built at 2025-05-19`), resolved from the `api` module's own classpath so
 that engine parity between the two sides is guaranteed by construction — driving
-`liquibase-schema-only.xml` with the platform's own bookkeeping table names
-(`--databaseChangelogTableName=liquibasechangelog`,
-`--databaseChangelogLockTableName=liquibasechangeloglock`, matching
-`DatabaseUpdater.setDatabaseChangeLogTableName`). Each database was then dumped with
+`liquibase-schema-only.xml` with the platform's own bookkeeping table names. Those two names, the target
+URL and the credentials are all **properties inside the mode-600 defaults file** that
+`liquibase.integration.commandline.Main` reads via `--defaultsFile`, not command-line options:
+`databaseChangelogTableName=liquibasechangelog` and
+`databaseChangelogLockTableName=liquibasechangeloglock`, matching
+`DatabaseUpdater.setDatabaseChangeLogTableName`. The complete Liquibase command line carries only
+`--defaultsFile=<path>` and the `update` verb. Each database was then dumped with
 `mysqldump --no-data --skip-comments --skip-dump-date`.
 
-The measurements below are the ones this run produced. Every one is reproducible with the script in
-(e).4, and every raw artifact it names was retained by the run that produced them.
+The measurements below are the ones this run produced — run identifier **`eefb32d9fa1d`**, with every raw
+artifact retained by the run itself under `./v3-evidence-eefb32d9fa1d/`. Every figure is reproducible with
+the script in (e).4, which is the exact script that produced them.
 
 | Measurement | Before side (base-commit changelog bytes) | After side (current changelog bytes) |
 |---|---|---|
-| Changesets executed (Liquibase log) | **1,028** | **1,028** |
+| Changesets executed (`UPDATE SUMMARY` in the engine log) | **1,028** run, 0 previously run, 0 filtered out | **1,028** run, 0 previously run, 0 filtered out |
+| `Running Changeset:` lines in the engine log | **1,028** | **1,028** |
 | Rows in `liquibasechangelog` | **1,028** | **1,028** |
 | Base tables | **119** | **119** |
 | Columns | **1,510** | **1,510** |
@@ -746,6 +804,39 @@ The measurements below are the ones this run produced. Every one is reproducible
 | MD5 of the dump | `659f521033a44a4b95e57fe0bbe105a9` | `659f521033a44a4b95e57fe0bbe105a9` |
 
 **`diff` exited 0 with zero differing lines**, and `cmp` reports the two dumps **byte-identical**.
+
+Each figure above was read back out of a named file rather than transcribed from a terminal, so none of them
+rests on recollection. Every value in the table above and the one below was verified against these files
+twice: once when the run finished, and again during the final validation sweep. The directory has since been
+removed, exactly as the guidance in section (e).3 directs — it is an untracked 15 MB byproduct that must not
+enter a commit, so it is deliberately **not** present in a fresh clone, and the file names below are a
+description of what a re-run produces rather than a path you can list today. Re-running the script in
+(e).4 recreates all of it under a new run identifier. The recorded run produced, under
+`./v3-evidence-eefb32d9fa1d/`:
+
+| Artifact | Contents as produced by the recorded run |
+|---|---|
+| `changelogs-base.txt`, `changelogs-current.txt` | the two sorted changelog listings, 38 paths each |
+| `changelogs-fileset.diff` | **0 lines** — the file sets are equal |
+| `changelogs-verdict.txt` | `38 files compared, 0 differing` |
+| `current-changelogs/` | the current side's symmetric root: the changelog closure copied from the working tree, nothing else |
+| `current-copy-verdict.txt` | `38 files copied from the working tree, 0 differing` |
+| `engine-log.diff` | **0 lines** — the two engine logs agree once timestamps are stripped |
+| `liquibase-update-before.norm.log`, `liquibase-update-after.norm.log` | the timestamp-normalised logs that comparison consumed |
+| `metrics-before.txt`, `metrics-after.txt` | `tables 119`, `columns 1510`, `indexes 697`, `fkeys 446`, `changesets 1028` — identical files |
+| `schema-before.sql`, `schema-after.sql` | the two raw dumps |
+| `schema-before.norm.sql`, `schema-after.norm.sql` | the normalised dumps (provably identical to the raw ones) |
+| `schema.diff` | **0 lines** |
+| `checksums.txt` | one MD5, `659f521033a44a4b95e57fe0bbe105a9`, for **all four** dump files |
+| `sizes.txt` | `3389 175156` for each of the four dump files |
+| `create-table-count-before.txt`, `create-table-count-after.txt` | `119` and `119` |
+| `dbname-occurrences-before.txt` | **`0`** — the database name never appears in the dump |
+| `shared-db-before.txt`, `shared-db-after.txt` | `126` and `1065` both times, byte-identical |
+| `planned-databases.txt`, `created-databases.txt` | the two composed names, and the two actually created |
+| `cleanup.log` | `dropped openmrs_v3_before_eefb32d9fa1d`, `dropped openmrs_v3_after_eefb32d9fa1d` |
+| `liquibase-update-before.log`, `liquibase-update-after.log` | the two engine logs, **1,169 lines each**, each with 1,028 `Running Changeset:` lines and the same **116** `Name 'PK_…' ignored for PRIMARY key.` warnings, each ending `Total change sets: 1028` and `Liquibase: Update has been successful. Rows affected: 1028` |
+| `api-runtime-classpath.txt` | the resolved `api` runtime classpath the engine-version check reads |
+| `base-changelogs/` | the `git archive` extraction of the base-commit changelog bytes |
 
 One precision that matters, because the obvious worry about comparing two differently-named databases is
 that a normalisation step could hide a real difference: **no normalisation was needed.** A single-database
@@ -759,20 +850,29 @@ Three safety statements, because this ran against a shared server:
 
 - Only the two databases created for this comparison were ever written to. Their names are
   **per-run**, not per-checkout — `openmrs_v3_{before,after}_<run-id>`, where the run id is 48 bits read
-  from `/dev/urandom` on each invocation, so neither a second clone nor a second run from the *same*
-  clone can compose a colliding name; the recorded run used `openmrs_v3_before_eda88e4c8ddc` and
-  `openmrs_v3_after_eda88e4c8ddc`, and the script wrote exactly those two names to
-  `v3-evidence/created-databases.txt` as it created them. Each name is regex-validated, the script
-  refuses to start if either equals the shared database, and an `flock` prevents two runs from
-  overlapping at all.
+  from `/dev/urandom` on each invocation. Two runs composing the same name is therefore not
+  *impossible*, only **negligible** — of the order of 1 in 2.8 × 10¹⁴ for any given pair of runs — and
+  the script does not rest on that arithmetic: the `CREATE DATABASE` has **no preceding `DROP` and no
+  `IF NOT EXISTS`**, so a collision **fails the run closed** rather than destroying whatever holds the
+  name. The recorded run used `openmrs_v3_before_eefb32d9fa1d` and `openmrs_v3_after_eefb32d9fa1d`, and
+  the script wrote exactly those two names to `v3-evidence-eefb32d9fa1d/created-databases.txt` as it
+  created them. Each name is regex-validated, the script refuses to start if either equals the shared
+  database, and an `flock` held on an owner-only stable path prevents two runs from overlapping at all.
 - The shared `openmrs` database was measured **before** the run and **after** cleanup and was identical
   both times — **126 catalogued tables / 1,065 changesets** — with the comparison asserted by `cmp`
   inside the script rather than eyeballed. "Catalogued tables" is the exact quantity the script counts:
   all `information_schema.tables` rows for that schema, which here are 125 base tables plus one view.
   A neighbouring clone's database (`openmrs_c002`) was never referenced.
-- Cleanup drops **only the databases this run actually created** and removes both credential files. It is
-  installed on `EXIT`, is idempotent, and never touches the exit status; `INT` and `TERM` have their own
-  handler that exits **130** / **143**, so an interrupted run can never be mistaken for a pass.
+- Cleanup drops **only the databases this run actually created**, and it **verifies** every release
+  instead of assuming it: each `DROP` is followed by an `information_schema.schemata` count, each
+  credential file is re-tested with `[ -e ]`, and the credential directory itself must be gone. Failures
+  are **aggregated**, cleanup returns non-zero, and the `CLEANED` flag stays `0` so a retry remains
+  possible. `PASS` is printed **only after** that verified cleanup succeeds; had anything been left
+  behind, the run would have exited **78** carrying the leftover count. `INT` and `TERM` have their own
+  handler that exits **130** / **143**, so an interrupted run can never be mistaken for a pass. The
+  recorded run's `cleanup.log` contains exactly `dropped openmrs_v3_before_eefb32d9fa1d` and
+  `dropped openmrs_v3_after_eefb32d9fa1d`; the host was then inspected independently, and no disposable
+  database remained on the server and `/dev/shm` held no credential directory.
 
 Section (e).5 below sets out, independently of this measurement, the four structural reasons the diff
 **had** to be empty. The measurement and the reasoning agree.
@@ -792,7 +892,8 @@ configuration for a schema comparison **must override the URL to a disposable da
 run writes into whatever `openmrs` happens to be on the host, which on a shared or clinical host is
 exactly the outcome to avoid. That single fact is why the executed comparison in (e).1 did **not** use the
 plugin: it drove `liquibase-core` **4.32.0** directly off the `api` module's classpath with an explicit
-`--url` per side, which (a) makes the target database impossible to inherit by accident, and (b) pins both
+`url` property written into each side's own defaults file, which (a) makes the target database impossible
+to inherit by accident, and (b) pins both
 sides to the same engine version as the library the platform actually ships, rather than to the
 plugin's **4.32.0-versus-4.33.0** skew recorded as register item 7.
 
@@ -814,36 +915,88 @@ was verified.
 > `DROP` below is directed at a **name the script itself composes** from a per-run random identifier, the
 > composed name is **regex-validated** before use, and the script **refuses to start** if either name
 > equals the shared database. Never substitute `openmrs`, and never point it at anything holding real
-> data. The shared database is read **only** for the before/after assertion in steps 3 and 10.
+> data. The shared database is read **only** for the before/after assertion in steps 5 and 11.
 
-This is the script that produced the measurements in (e).1 — not an outline of one. Five properties make
+This is the script that produced the measurements in (e).1 — not an outline of one. Seven properties make
 it safe to publish and safe to re-run:
 
-- **Fail-fast with preserved status.** `set -euo pipefail`, and every step that can fail is wrapped in an
-  `if ! …; then` guard that reports and exits non-zero. `diff`'s status is captured into `DIFF_STATUS`
-  (with `set +e` around it, because a *non-zero* `diff` status is the failure signal, not a shell error)
-  and the run's final verdict is derived from that captured value. **No later step can mask an earlier
-  failure**, and cleanup cannot overwrite the verdict.
-- **Isolation that fails closed, and cannot race another run.** Both sides live in disposable databases
-  whose names carry a **48-bit per-run identifier read from the kernel CSPRNG** — *per run*, not per
-  checkout, so two runs started from the same working tree cannot collide — and an `flock` on a single
-  lock file means two runs cannot even overlap. Creation uses a bare `CREATE DATABASE` with **no
-  preceding `DROP` and no `IF NOT EXISTS`**, so an unexpected name collision **aborts the run instead of
-  destroying whatever holds that name**. The shared database is only ever read, and the pre/post readings
-  are compared with `cmp` so drift fails the run.
-- **Cleanup owns only what this run created.** Each database name is appended to `CREATED_DBS` *after* its
-  `CREATE` succeeds, and cleanup drops **only** the names in that list — never a name merely composed,
-  and never another run's database.
-- **Signal handling that cannot report an interruption as a pass.** Cleanup is installed on **`EXIT`
-  only**, so it never inspects or alters `$?` and the verdict survives it; a `CLEANED` guard makes it
-  idempotent. `INT` and `TERM` have their own handler, which clears the traps, cleans up once, and exits
-  with the conventional **130** / **143**. A `trap cleanup EXIT INT TERM` that ends in `exit "$status"`
-  does *not* do this: measured on this host, the handler observes status **0**, the body runs **twice**,
-  and the process exits **0** — an interrupted schema comparison would be indistinguishable from a pass.
-  That earlier form, and the claim that it "re-raises the original exit status", are **withdrawn**.
-- **Evidence retention.** Both raw dumps, the normalised dumps, the `diff` output, the MD5 list, the
-  per-side metrics and both Liquibase logs are written under an evidence directory *before* any cleanup,
-  so the artifacts behind every figure in (e).1 outlive the run.
+- **Fail-fast, with the two mechanisms kept distinct.** What makes an unguarded failure fatal is
+  `set -euo pipefail`, not a guard: the shell aborts on the first non-zero status, on an unset variable
+  and on a failing pipeline stage. The `if ! …; then` wrappers are layered on top of that for the steps
+  whose failure deserves a *specific diagnostic* — the two `CREATE DATABASE`s, the Liquibase `update`s,
+  the `mysqldump`s, the metric and shared-database reads, `git archive`, the classpath resolution and the
+  engine-version check. It is therefore **not** true that every fallible command carries an explicit
+  guard, and this document no longer claims it does: `sed`, `md5sum`, `wc`, `mkdir`, `chmod`, `rmdir` and
+  the `printf` redirections are covered by `set -e` alone and abort without a bespoke message. Three
+  places deliberately suspend `-e`, each for a stated reason: the `diff` whose **non-zero status is data**
+  (captured into `DIFF_STATUS` and asserted later, never discarded), the `grep -c` occurrence count that
+  legitimately matches zero times (`|| true`), and the body of `cleanup`, which must attempt *every*
+  release even after one of them fails. **No later step can mask an earlier failure**, and cleanup can
+  only ever make the final status worse.
+- **Isolation that fails closed.** Both sides live in disposable databases whose names carry a **48-bit
+  per-run identifier read from the kernel CSPRNG** — *per run*, not per checkout. A collision is not
+  impossible, merely **negligible** (of the order of 1 in 2.8 × 10¹⁴ per pair of runs), and correctness
+  does not depend on that: creation uses a bare `CREATE DATABASE` with **no preceding `DROP` and no
+  `IF NOT EXISTS`**, so an unexpected name collision **aborts the run instead of destroying whatever
+  holds that name**, and each composed name is regex-validated and checked against the shared database
+  first. The shared database is only ever read, and its pre/post readings are compared with `cmp` so
+  drift fails the run.
+- **Mutual exclusion on a verified, owner-only, stable path.** The lock is deliberately **not** derived
+  from `TMPDIR`: two runs with different `TMPDIR` values would take two different locks and overlap, and
+  a world-writable, non-sticky `TMPDIR` (this host's `/tmp` is exactly that — `drwxrwsrwx`, no sticky
+  bit) invites a symlink swap. It lives in `${XDG_RUNTIME_DIR:-$HOME}/.openmrs-v3-schema-diff`, which is
+  rejected if it exists as a non-directory, created under `umask 077`, forced to mode `700` (a `chmod`
+  that fails means the directory is not yours, and the run aborts), and then re-verified as *a real
+  directory, not a symlink, owned by this uid, mode 700*. The lock file itself must be absent or a
+  **regular file owned by this uid** — never a symlink — and it is opened with `exec 9<>`, i.e.
+  `O_RDWR|O_CREAT` and **never `O_TRUNC`**, so the descriptor cannot truncate or write anything through a
+  path someone else controls. Measured after the recorded run: directory `700`, lock file mode `600` and
+  **0 bytes**. The lock's scope is exactly *one concurrent run per user per host*, which is what the
+  comparison needs, and no more.
+- **Credentials on a verified `tmpfs`, chosen without consulting `TMPDIR` at all.** An earlier revision
+  preferred `CRED_DIR="${TMPDIR:-}"`, which let a caller-supplied variable send the plaintext password to
+  persistent — or hostile — storage and bypassed the `tmpfs` preference entirely; that is **withdrawn**.
+  The script now selects `/dev/shm` only after checking that it is a directory, **not** a symlink,
+  writable, and reported as `tmpfs` by `stat -f -c %T`; the credential directory is then created fresh
+  with `mktemp -d`, set to `700`, and re-verified for type, ownership and mode, with a final
+  filesystem-type re-check that aborts if a directory believed to be on `tmpfs` is not. Only if no
+  writable `tmpfs` exists does it fall back to `${TMPDIR:-/tmp}`, and that path **prints an explicit
+  warning** that the secret may reach persistent storage and that unlinking is not erasure.
+- **Cleanup that verifies its own work and cannot be papered over.** Cleanup owns a name only *after* its
+  `CREATE` has succeeded. It then **verifies** each release rather than assuming it — every `DROP` is
+  followed by an `information_schema.schemata` count, every credential file by `[ -e ]`, the credential
+  directory by `[ -d ]` — **aggregates** every failure into a count, rebuilds `CREATED_DBS` from only the
+  names that are still present so a retry stays possible, leaves `CLEANED` at `0`, and **returns
+  non-zero**. An earlier revision set `CLEANED=1` on entry and discarded every `DROP`'s status, so a
+  failed cleanup was silently indistinguishable from a successful one; that is **withdrawn**. `PASS` is
+  now printed only after an **explicit, checked `cleanup` call**, and the `EXIT` trap is a backstop that
+  may only make the status *worse*: it **overrides a zero status with 78** if anything is left behind.
+- **A fresh per-run evidence directory, and a file-set check before the byte check.** Every artifact —
+  both raw dumps, both normalised dumps, the `diff`, the MD5 list, the sizes, the per-side metrics, both
+  Liquibase logs, the cleanup log, the classpath file and the extracted base-commit changelogs — is
+  written under `./v3-evidence-<run-id>/`, created with a plain `mkdir` (**no `-p`**) after an `[ -e ]`
+  refusal, so a stale directory from an earlier run cannot be silently reused or contaminate the
+  evidence. Fixed scratch paths (`api_cp.txt`, `base-changelogs/`, a shared `v3-evidence/`) are
+  **withdrawn** for the same reason. The changelog check now compares the **sorted file sets** of the
+  base and current trees *first* and aborts on any difference, because a byte loop driven by the base
+  list can only ever notice a deletion — a *newly added* current-tree changelog would pass unnoticed.
+  The two changelog roots are then made **symmetric**, each holding the changelog closure and nothing
+  else, with the current side's copy re-verified against the working tree by `cmp` before it is used;
+  that symmetry is what turns the timestamp-normalised **engine-log comparison** into a real assertion
+  about changeset execution rather than a comparison of two log formatters.
+- **Signal handling that cannot report an interruption as a pass.** `INT` and `TERM` have their own
+  handler, which clears the traps, cleans up once, and exits with the conventional **130** / **143**. A
+  `trap cleanup EXIT INT TERM` that ends in `exit "$status"` does *not* do this: measured on this host,
+  the handler observes status **0**, the body runs **twice**, and the process exits **0** — an
+  interrupted schema comparison would be indistinguishable from a pass. That earlier form, and the claim
+  that it "re-raises the original exit status", are **withdrawn**. The `EXIT` handler reads `$?` for one
+  purpose only: to pass a *non-zero* status through unchanged while still being able to escalate a zero
+  one to **78** on a failed cleanup. This was **exercised, not merely reasoned about**: a run was sent
+  `SIGTERM` four seconds in, with the `before` database already created and the credential directory
+  already populated. It printed `INTERRUPTED by signal 15: this run is NOT a pass`, exited **143**, and
+  its `cleanup.log` recorded `dropped openmrs_v3_before_68a2f86c37c6` — after which the server held no
+  disposable database, `/dev/shm` held no credential directory, the shared `openmrs` database was
+  untouched, and the partial evidence directory was left in place for inspection.
 
 **No credential appears in any argument.** Every argument of every process is world-readable through
 `/proc/<pid>/cmdline`, so a same-host or same-namespace observer can lift a password out of a running
@@ -856,13 +1009,17 @@ reach the command line; the command has been corrected to match the claim. The `
 that looks natural in prose is **not executable** either: the shell reads `<user>` and `>` as
 input/output redirection, so the command fails before `mysqldump` ever starts.
 
-Both credential files are created with `umask 077` and `chmod 600`. The ordering matters more than the
-mode: the `EXIT` trap and the variables it reads are established **before `mktemp` runs**, and the secret
-is written only afterwards, so at no point does credential material exist that cleanup would not remove.
-The earlier revision created and populated the file first and installed the trap several lines later,
-leaving a window in which an I/O failure, a shell error or an interrupt could strand a plaintext password
-on disk. The files are also placed on a **`tmpfs`** (`/dev/shm`) when one is available, precisely so the
-secret need never reach persistent storage at all.
+Both credential files are created with `umask 077` and `chmod 600`, **inside** a freshly created mode-700
+directory on a verified `tmpfs`. Containment matters as much as the file mode: a directory that is new and
+private means nothing can be substituted underneath either file after it is created, and it gives cleanup
+something it can assert has gone — the directory itself, not merely the two names inside it. The ordering
+matters more than either: the `EXIT` trap and every variable it reads are established **before `mktemp`
+runs**, and the secret is written only afterwards, so at no point does credential material exist that
+cleanup would not remove. The earlier revision created and populated the file first and installed the trap
+several lines later, leaving a window in which an I/O failure, a shell error or an interrupt could strand
+a plaintext password on disk. Placing the files on a **`tmpfs`** (`/dev/shm`, *validated* as one rather
+than assumed to be one) is what keeps the secret off persistent storage altogether, and the fallback that
+cannot do so says so out loud.
 
 > **Note:** `rm -f` **unlinks** the file; that is **not** erasure. `shred` is best-effort at best and
 > offers **no portable guarantee** — not on SSD or other flash translation layers, not on copy-on-write
@@ -878,104 +1035,277 @@ secret need never reach persistent storage at all.
   BASE_COMMIT=3934d8086c684269e935562f25e806be91947115
   DB_HOST=127.0.0.1; DB_PORT=3306
   SHARED_DB=openmrs                           # READ-ONLY here. Never a DROP/CREATE target.
-  EVIDENCE=./v3-evidence
   : "${DB_PASS:?export DB_PASS before running; no credential is written into this document}"
+  : "${HOME:?HOME must be set: the lock lives in a stable owner-only directory, not in TMPDIR}"
 
-  # 0. Declare everything cleanup owns, then install the traps - BEFORE any secret exists
-  #    and before any database exists. There is no window in which either is unowned.
-  MYSQL_CNF=; LB_CNF=; CREATED_DBS=(); CLEANED=0
-
-  cleanup() {                 # EXIT only: it never inspects or alters $?, so it cannot
-    if [ "$CLEANED" -eq 1 ]; then return 0; fi   # overwrite the verdict, and never runs twice
-    CLEANED=1
-    set +e
-    local db f
-    if [ "${#CREATED_DBS[@]}" -gt 0 ] && [ -n "$MYSQL_CNF" ]; then
-      for db in "${CREATED_DBS[@]}"; do          # drop ONLY what this run created
-        mysql --defaults-extra-file="$MYSQL_CNF" \
-          -e "DROP DATABASE IF EXISTS \`$db\`;" >> "$EVIDENCE/cleanup.log" 2>&1
-      done
-    fi
-    for f in "$MYSQL_CNF" "$LB_CNF"; do
-      if [ -n "$f" ]; then rm -f "$f"; fi        # unlink, NOT erasure - see the note above
-    done
-  }
-
-  on_signal() {               # INT/TERM: clean up once, then exit 128+signo - never 0
-    local signo="$1"
-    trap - EXIT INT TERM
-    cleanup
-    printf 'INTERRUPTED by signal %s: this run is NOT a pass\n' "$signo" >&2
-    exit "$((128 + signo))"
-  }
-
-  trap cleanup EXIT
-  trap 'on_signal 2'  INT
-  trap 'on_signal 15' TERM
-
-  mkdir -p "$EVIDENCE"
-  : > "$EVIDENCE/created-databases.txt"   # start empty: this file describes THIS run only
-
-  # 1. Per-RUN identity (48 bits from the kernel CSPRNG), not per-checkout: two runs from
-  #    the same working tree can never collide. The lock means they cannot even overlap.
+  # 0. Per-run identity FIRST: every path and every database name below derives from it.
+  #    48 bits from the kernel CSPRNG. A collision is not impossible, merely negligible
+  #    (~1 in 2.8e14 per pair of runs), and every use of the value is fail-closed anyway:
+  #    the CREATE has no preceding DROP, the evidence directory is created with a plain
+  #    mkdir, and the lock is advisory-locked - so a collision aborts rather than destroys.
   RUN_ID="$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
   DB_BEFORE="openmrs_v3_before_$RUN_ID"
   DB_AFTER="openmrs_v3_after_$RUN_ID"
   for d in "$DB_BEFORE" "$DB_AFTER"; do
     if [ "$d" = "$SHARED_DB" ] || ! [[ "$d" =~ ^openmrs_v3_(before|after)_[0-9a-f]{12}$ ]]; then
-      echo "FATAL: refusing to operate on database name '$d'" >&2; exit 1
+      printf 'FATAL: refusing to operate on database name %s\n' "$d" >&2; exit 1
     fi
   done
-  LOCK_FILE="${TMPDIR:-/tmp}/openmrs-v3-schema-diff.lock"
-  exec 9>"$LOCK_FILE"
-  if ! flock -n 9; then
-    echo "FATAL: another comparison run holds $LOCK_FILE" >&2; exit 1
-  fi
 
-  # 2. Credentials: off argv entirely, and off persistent storage where a tmpfs exists.
-  CRED_DIR="${TMPDIR:-}"
-  if [ -z "$CRED_DIR" ]; then
-    if [ "$(stat -f -c %T /dev/shm 2>/dev/null)" = tmpfs ] && [ -w /dev/shm ]; then
-      CRED_DIR=/dev/shm                        # tmpfs: the secret never reaches a disk
-    else
-      CRED_DIR=/tmp                            # removal is not erasure - see the note
+  # 1. Declare everything cleanup owns, then install the traps - BEFORE any secret, any
+  #    directory and any database exists. There is no window in which either is unowned.
+  MYSQL_CNF=; LB_CNF=; CRED_DIR=; CREATED_DBS=(); CLEANED=0; CLEANUP_FAILURES=0
+  CLEANUP_LOG=                                # a real file once step 4 has run; empty before that
+
+  # Diagnostics must never depend on a log file existing: cleanup can run before step 4, and
+  # `>> /dev/stderr` is not portable (it fails outright when fd 2 is a socket). Messages go to
+  # fd 2 directly until there is a file, and command output goes to /dev/null until then.
+  cl_log() {
+    if [ -n "$CLEANUP_LOG" ]; then printf '%s\n' "$*" >> "$CLEANUP_LOG"; else printf '%s\n' "$*" >&2; fi
+  }
+
+  # A private directory means: a real directory, not a symlink, owned by this uid, mode 700.
+  verify_private_dir() {
+    local p="$1" info
+    if [ -L "$p" ]; then printf 'FATAL: %s is a symlink\n' "$p" >&2; return 1; fi
+    if ! info="$(stat -c '%F %u %a' "$p" 2>/dev/null)"; then
+      printf 'FATAL: cannot stat %s\n' "$p" >&2; return 1
+    fi
+    if [ "$info" != "directory $(id -u) 700" ]; then
+      printf 'FATAL: %s is not a directory owned by uid %s with mode 700 (got: %s)\n' \
+        "$p" "$(id -u)" "$info" >&2
+      return 1
+    fi
+  }
+
+  # Cleanup is idempotent, aggregates every failure, verifies every release, keeps retry
+  # state, and returns NON-ZERO if anything is left behind. It never inspects or alters $?.
+  cleanup() {
+    if [ "$CLEANED" -eq 1 ]; then return 0; fi
+    local db f present failures=0
+    local -a remaining=()
+    set +e
+    if [ "${#CREATED_DBS[@]}" -gt 0 ] && [ -n "$MYSQL_CNF" ] && [ -f "$MYSQL_CNF" ]; then
+      for db in "${CREATED_DBS[@]}"; do
+        mysql --defaults-extra-file="$MYSQL_CNF" -e "DROP DATABASE IF EXISTS \`$db\`;" \
+          >> "${CLEANUP_LOG:-/dev/null}" 2>&1
+        present="$(mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
+          "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='$db';" \
+          2>> "${CLEANUP_LOG:-/dev/null}")"
+        if [ "$present" = 0 ]; then
+          cl_log "dropped $db"
+        else
+          cl_log "FAILED to drop $db (still present: ${present:-unknown})"
+          remaining+=("$db"); failures=$((failures + 1))
+        fi
+      done
+    elif [ "${#CREATED_DBS[@]}" -gt 0 ]; then
+      cl_log "FAILED: no usable credential file; ${#CREATED_DBS[@]} database(s) cannot be dropped"
+      remaining=("${CREATED_DBS[@]}"); failures=$((failures + 1))
+    fi
+    CREATED_DBS=(${remaining[@]+"${remaining[@]}"})   # only the undropped names survive
+    for f in "$MYSQL_CNF" "$LB_CNF"; do
+      [ -n "$f" ] || continue
+      rm -f -- "$f"                                  # unlink, NOT erasure - see the note above
+      if [ -e "$f" ]; then
+        cl_log "FAILED to remove $f"; failures=$((failures + 1))
+      fi
+    done
+    if [ -n "$CRED_DIR" ] && [ -d "$CRED_DIR" ]; then
+      rmdir -- "$CRED_DIR" 2>> "${CLEANUP_LOG:-/dev/null}"
+      if [ -d "$CRED_DIR" ]; then
+        cl_log "FAILED to remove $CRED_DIR"; failures=$((failures + 1))
+      fi
+    fi
+    set -e
+    CLEANUP_FAILURES="$failures"
+    if [ "$failures" -ne 0 ]; then return 1; fi      # CLEANED stays 0, so a retry is possible
+    CLEANED=1
+    return 0
+  }
+
+  on_exit() {                 # EXIT: last resort. It may only make the status WORSE, never better.
+    local status=$?
+    if ! cleanup; then
+      printf 'FATAL: cleanup left %s resource(s) behind - see %s. This run is NOT a pass.\n' \
+        "$CLEANUP_FAILURES" "${CLEANUP_LOG:-the messages above}" >&2
+      exit 78                                        # overrides a zero status
+    fi
+    exit "$status"
+  }
+
+  on_signal() {               # INT/TERM: clean up once, then exit 128+signo - never 0
+    local signo="$1"
+    trap - EXIT INT TERM
+    if ! cleanup; then
+      printf 'WARNING: cleanup left %s resource(s) behind - see %s\n' \
+        "$CLEANUP_FAILURES" "${CLEANUP_LOG:-the messages above}" >&2
+    fi
+    printf 'INTERRUPTED by signal %s: this run is NOT a pass\n' "$signo" >&2
+    exit "$((128 + signo))"
+  }
+
+  trap on_exit EXIT
+  trap 'on_signal 2'  INT
+  trap 'on_signal 15' TERM
+
+  # 2. Mutual exclusion on a STABLE, owner-only path. The lock is deliberately NOT derived
+  #    from TMPDIR: two runs with different TMPDIR values would otherwise take two different
+  #    locks and overlap. Scope: one concurrent run per user per host. The file is opened
+  #    read-write with O_CREAT and WITHOUT O_TRUNC, so nothing is ever written or destroyed
+  #    through it, and the directory is verified owner-only first, so no other user can
+  #    plant a symlink in it.
+  umask 077                                   # every file and directory below is private
+  LOCK_DIR="${XDG_RUNTIME_DIR:-$HOME}/.openmrs-v3-schema-diff"
+  if [ -e "$LOCK_DIR" ] && [ ! -d "$LOCK_DIR" ]; then
+    printf 'FATAL: %s exists and is not a directory\n' "$LOCK_DIR" >&2; exit 1
+  fi
+  if [ ! -d "$LOCK_DIR" ]; then
+    ( umask 077; mkdir "$LOCK_DIR" )          # umask, not `mkdir -p -m`, which only modes the leaf
+  fi
+  if ! chmod 700 "$LOCK_DIR" 2>/dev/null; then
+    printf 'FATAL: cannot set mode 700 on %s - it is not yours\n' "$LOCK_DIR" >&2; exit 1
+  fi
+  verify_private_dir "$LOCK_DIR"
+  LOCK_FILE="$LOCK_DIR/schema-diff.lock"
+  if [ -L "$LOCK_FILE" ]; then
+    printf 'FATAL: %s is a symlink\n' "$LOCK_FILE" >&2; exit 1
+  fi
+  if [ -e "$LOCK_FILE" ]; then
+    if [ ! -f "$LOCK_FILE" ] || [ "$(stat -c %u "$LOCK_FILE")" != "$(id -u)" ]; then
+      printf 'FATAL: %s is not a regular file owned by uid %s\n' "$LOCK_FILE" "$(id -u)" >&2; exit 1
     fi
   fi
-  umask 077
-  MYSQL_CNF="$(mktemp "$CRED_DIR/openmrs-v3-mysql.XXXXXXXX")"
-  LB_CNF="$(mktemp "$CRED_DIR/openmrs-v3-liquibase.XXXXXXXX")"
+  exec 9<>"$LOCK_FILE"                        # O_RDWR|O_CREAT - never O_TRUNC
+  if ! flock -n 9; then
+    printf 'FATAL: another comparison run holds %s\n' "$LOCK_FILE" >&2; exit 1
+  fi
+
+  # 3. Credentials: a FRESH private directory on a VERIFIED tmpfs, chosen without consulting
+  #    TMPDIR at all, so no caller-supplied path can redirect the secret to persistent or
+  #    hostile storage. Because the directory is new and mode 700, nothing can be substituted
+  #    underneath the files after they are created.
+  CRED_PARENT=
+  CRED_PERSISTENT=no
+  if [ -d /dev/shm ] && [ ! -L /dev/shm ] && [ -w /dev/shm ] \
+     && [ "$(stat -f -c %T /dev/shm 2>/dev/null)" = tmpfs ]; then
+    CRED_PARENT=/dev/shm
+  else
+    CRED_PARENT="${TMPDIR:-/tmp}"
+    CRED_PERSISTENT=yes
+    printf 'WARNING: no writable tmpfs available; the credential files will be created under %s, which may be persistent storage. Unlinking is not erasure.\n' \
+      "$CRED_PARENT" >&2
+  fi
+  CRED_DIR="$(mktemp -d "$CRED_PARENT/openmrs-v3-cred-$RUN_ID.XXXXXXXX")"
+  chmod 700 "$CRED_DIR"
+  verify_private_dir "$CRED_DIR"
+  CRED_FS="$(stat -f -c %T "$CRED_DIR")"
+  if [ "$CRED_PERSISTENT" = no ] && [ "$CRED_FS" != tmpfs ]; then
+    printf 'FATAL: %s is not on a tmpfs (got %s)\n' "$CRED_DIR" "$CRED_FS" >&2; exit 1
+  fi
+  MYSQL_CNF="$CRED_DIR/mysql.cnf"
+  LB_CNF="$CRED_DIR/liquibase.properties"
+  : > "$MYSQL_CNF"; : > "$LB_CNF"
   chmod 600 "$MYSQL_CNF" "$LB_CNF"
   printf '[client]\nuser=root\npassword=%s\nhost=%s\nport=%s\n' \
     "$DB_PASS" "$DB_HOST" "$DB_PORT" > "$MYSQL_CNF"
 
-  # 3. Shared database pre-state - READ ONLY. Re-checked identical in step 10.
-  mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
+  # 4. A FRESH, per-run, private evidence directory. Plain `mkdir` - no -p - so a stale
+  #    directory from an earlier run cannot contaminate this one, and ALL scratch lives
+  #    inside it rather than in fixed working-tree paths.
+  EVIDENCE="./v3-evidence-$RUN_ID"
+  if [ -e "$EVIDENCE" ]; then
+    printf 'FATAL: %s already exists; refusing to reuse an evidence directory\n' "$EVIDENCE" >&2
+    exit 1
+  fi
+  mkdir "$EVIDENCE"
+  chmod 700 "$EVIDENCE"
+  CLEANUP_LOG="$EVIDENCE/cleanup.log"
+  : > "$CLEANUP_LOG"
+  printf '%s\n' "$DB_BEFORE" "$DB_AFTER" > "$EVIDENCE/planned-databases.txt"
+  : > "$EVIDENCE/created-databases.txt"       # what this run actually created, appended as it goes
+
+  # 5. Shared database pre-state - READ ONLY. Re-checked identical in step 10.
+  if ! mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
     "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$SHARED_DB'), \
             (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" > "$EVIDENCE/shared-db-before.txt"
+  then printf 'FATAL: cannot read the shared database pre-state\n' >&2; exit 1; fi
 
-  # 4. Materialise the BASE-COMMIT changelog bytes without touching the working tree,
-  #    and prove byte-for-byte equality with the current tree.
-  mkdir -p base-changelogs
-  git archive "$BASE_COMMIT" -- 'api/src/main/resources/liquibase-*.xml' \
-                                'api/src/main/resources/org/openmrs/liquibase' | tar -x -C base-changelogs
-  BASE_ROOT=base-changelogs/api/src/main/resources
+  # 6. Materialise the BASE-COMMIT changelog bytes without touching the working tree.
+  mkdir "$EVIDENCE/base-changelogs"
+  BASE_ROOT="$EVIDENCE/base-changelogs/api/src/main/resources"
+  if ! git archive "$BASE_COMMIT" -- 'api/src/main/resources/liquibase-*.xml' \
+                                     'api/src/main/resources/org/openmrs/liquibase' \
+       | tar -x -C "$EVIDENCE/base-changelogs"
+  then printf 'FATAL: could not extract the base-commit changelogs\n' >&2; exit 1; fi
+
+  # 6a. FILE-SET equality FIRST. A base-only deletion and a current-only ADDITION are both
+  #     failures, and a byte loop driven by the base list can only ever see the former.
+  ( cd "$BASE_ROOT" && find . -name 'liquibase-*.xml' -type f | LC_ALL=C sort ) \
+    > "$EVIDENCE/changelogs-base.txt"
+  ( cd api/src/main/resources && find . -name 'liquibase-*.xml' -type f | LC_ALL=C sort ) \
+    > "$EVIDENCE/changelogs-current.txt"
+  if ! diff -u "$EVIDENCE/changelogs-base.txt" "$EVIDENCE/changelogs-current.txt" \
+       > "$EVIDENCE/changelogs-fileset.diff"
+  then printf 'FATAL: the changelog FILE SET differs from the base commit\n' >&2; exit 1; fi
+
+  # 6b. ...then byte equality over that identical set.
   diffcount=0
-  while IFS= read -r f; do
-    rel="${f#"$BASE_ROOT"/}"
-    cmp -s "$f" "api/src/main/resources/$rel" || { echo "DIFFERS: $rel"; diffcount=$((diffcount+1)); }
-  done < <(find "$BASE_ROOT" -name 'liquibase-*.xml' | sort)
-  if [ "$diffcount" -ne 0 ]; then echo "FATAL: changelog bytes are not frozen" >&2; exit 1; fi
+  while IFS= read -r rel; do
+    if ! cmp -s "$BASE_ROOT/$rel" "api/src/main/resources/$rel"; then
+      printf 'DIFFERS: %s\n' "$rel" >> "$EVIDENCE/changelogs-bytes.txt"
+      diffcount=$((diffcount + 1))
+    fi
+  done < "$EVIDENCE/changelogs-base.txt"
+  CHANGELOG_COUNT="$(wc -l < "$EVIDENCE/changelogs-base.txt" | tr -d ' ')"
+  if [ "$diffcount" -ne 0 ]; then
+    printf 'FATAL: changelog bytes are not frozen (%s differing)\n' "$diffcount" >&2; exit 1
+  fi
+  printf '%s files compared, 0 differing\n' "$CHANGELOG_COUNT" > "$EVIDENCE/changelogs-verdict.txt"
 
-  # 5. Resolve the SAME engine for both sides: liquibase-core 4.32.0 off the api classpath.
+  # 6c. SYMMETRY. Give the current side a root holding the changelog closure and NOTHING else,
+  #     because api/src/main/resources also carries META-INF/services registrations for
+  #     liquibase.logging.LogService, liquibase.change.Change, liquibase.sqlgenerator.SqlGenerator
+  #     and liquibase.datatype.LiquibaseDataType whose implementing classes live in api's own
+  #     output, not on this dependency-only classpath. Passing that whole root made ONE side
+  #     raise java.util.ServiceConfigurationError and fall back to java.util.logging, so the two
+  #     sides differed in more than the changelog bytes under comparison. Now they do not:
+  #     both roots hold exactly `liquibase-*.xml` plus `org/openmrs/liquibase/**`.
+  #     `mkdir -p` is used only for nested paths INSIDE the freshly created evidence directory.
+  CURRENT_ROOT="$EVIDENCE/current-changelogs/api/src/main/resources"
+  mkdir -p "$CURRENT_ROOT"
+  if ! ( cd api/src/main/resources && tar -cf - liquibase-*.xml org/openmrs/liquibase ) \
+       | tar -x -C "$CURRENT_ROOT"
+  then printf 'FATAL: could not materialise the current changelog closure\n' >&2; exit 1; fi
+
+  # The copy is only usable as evidence if it is provably the working tree's bytes.
+  copydiff=0
+  while IFS= read -r rel; do
+    if ! cmp -s "$CURRENT_ROOT/$rel" "api/src/main/resources/$rel"; then
+      printf 'DIFFERS: %s\n' "$rel" >> "$EVIDENCE/current-copy-bytes.txt"
+      copydiff=$((copydiff + 1))
+    fi
+  done < "$EVIDENCE/changelogs-current.txt"
+  if [ "$copydiff" -ne 0 ]; then
+    printf 'FATAL: the current-side copy is not byte-identical to the working tree (%s differing)\n' \
+      "$copydiff" >&2; exit 1
+  fi
+  printf '%s files copied from the working tree, 0 differing\n' "$CHANGELOG_COUNT" \
+    > "$EVIDENCE/current-copy-verdict.txt"
+
+  # 7. Resolve the SAME engine for both sides: liquibase-core 4.32.0 off the api classpath.
   #    mdep.outputFile MUST be absolute: with -pl it is otherwise resolved against the
   #    module basedir and lands in api/, not here.
-  CP_FILE="$PWD/api_cp.txt"
-  ./mvnw -B -q -o -pl api dependency:build-classpath \
-    -Dmdep.outputFile="$CP_FILE" -Dmdep.includeScope=runtime
-  grep -q 'liquibase-core/4\.32\.0/' "$CP_FILE" || { echo "FATAL: wrong engine" >&2; exit 1; }
+  CP_FILE="$PWD/${EVIDENCE#./}/api-runtime-classpath.txt"
+  if ! ./mvnw -B -q -o -pl api dependency:build-classpath \
+       -Dmdep.outputFile="$CP_FILE" -Dmdep.includeScope=runtime
+  then printf 'FATAL: could not resolve the api runtime classpath\n' >&2; exit 1; fi
+  if ! grep -q 'liquibase-core/4\.32\.0/' "$CP_FILE"; then
+    printf 'FATAL: wrong Liquibase engine on the resolved classpath\n' >&2; exit 1
+  fi
   CP="$(cat "$CP_FILE")"
 
-  # 6-8. Install and dump each side. $1 = database, $2 = changelog resource root, $3 = label.
+  # 8-9. Install and dump each side. $1 = database, $2 = changelog resource root, $3 = label.
   run_side() {
     local db="$1" root="$2" label="$3"
 
@@ -983,57 +1313,87 @@ secret need never reach persistent storage at all.
     # aborts the run instead of destroying whatever already holds that name.
     if ! mysql --defaults-extra-file="$MYSQL_CNF" -e \
       "CREATE DATABASE \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
-    then echo "FATAL: could not create $db - a name collision aborts the run" >&2; exit 1; fi
+    then printf 'FATAL: could not create %s - a name collision aborts the run\n' "$db" >&2; exit 1; fi
     CREATED_DBS+=("$db")     # only now, having created it, does cleanup own this name
     printf '%s\n' "$db" >> "$EVIDENCE/created-databases.txt"   # auditable: what this run owns
 
-    # Credentials AND the target URL go in the mode-600 defaults file, never in argv:
-    # every argument is world-readable through /proc/<pid>/cmdline. The explicit URL is
-    # also what keeps liquibase/pom.xml's shared-database <url> from being inherited.
-    # The changelog table names match DatabaseUpdater.
+    # Credentials AND the target URL are PROPERTIES IN THE MODE-600 DEFAULTS FILE, never
+    # command-line options: every argument is world-readable through /proc/<pid>/cmdline.
+    # The url property is also what keeps liquibase/pom.xml's shared-database <url> from
+    # being inherited. The changelog table names match DatabaseUpdater.
     printf 'url=jdbc:mysql://%s:%s/%s\nusername=root\npassword=%s\ndriver=com.mysql.cj.jdbc.Driver\nchangeLogFile=liquibase-schema-only.xml\ndatabaseChangelogTableName=liquibasechangelog\ndatabaseChangelogLockTableName=liquibasechangeloglock\nlogLevel=warning\n' \
       "$DB_HOST" "$DB_PORT" "$db" "$DB_PASS" > "$LB_CNF"
 
     if ! java -cp "$root:$CP" liquibase.integration.commandline.Main \
         --defaultsFile="$LB_CNF" update > "$EVIDENCE/liquibase-update-$label.log" 2>&1
-    then echo "FATAL: liquibase update failed for $label" >&2; exit 1; fi
+    then printf 'FATAL: liquibase update failed for %s\n' "$label" >&2; exit 1; fi
 
-    mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e "
+    if ! mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e "
       SELECT 'tables',      COUNT(*) FROM information_schema.tables  WHERE table_schema='$db' AND table_type='BASE TABLE'
       UNION ALL SELECT 'columns',    COUNT(*) FROM information_schema.columns WHERE table_schema='$db'
       UNION ALL SELECT 'indexes',    COUNT(DISTINCT CONCAT(table_name,'.',index_name)) FROM information_schema.statistics WHERE table_schema='$db'
       UNION ALL SELECT 'fkeys',      COUNT(*) FROM information_schema.table_constraints WHERE table_schema='$db' AND constraint_type='FOREIGN KEY'
       UNION ALL SELECT 'changesets', COUNT(*) FROM \`$db\`.liquibasechangelog;" > "$EVIDENCE/metrics-$label.txt"
+    then printf 'FATAL: could not read metrics for %s\n' "$db" >&2; exit 1; fi
 
     if ! mysqldump --defaults-extra-file="$MYSQL_CNF" --no-data --skip-comments --skip-dump-date \
         "$db" > "$EVIDENCE/schema-$label.sql"
-    then echo "FATAL: mysqldump failed for $db" >&2; exit 1; fi
+    then printf 'FATAL: mysqldump failed for %s\n' "$db" >&2; exit 1; fi
   }
-  run_side "$DB_BEFORE" "$BASE_ROOT"              before
-  run_side "$DB_AFTER"  api/src/main/resources    after
+  run_side "$DB_BEFORE" "$BASE_ROOT"     before      # base-commit changelog bytes
+  run_side "$DB_AFTER"  "$CURRENT_ROOT" after       # working-tree changelog bytes, same closure
 
-  # 9. Compare. The name substitution is a documented NO-OP for a single-database dump
-  #    (no CREATE DATABASE / USE is emitted); it is kept only so the step is explicit.
+  # 10. Compare. The name substitution is a documented NO-OP for a single-database dump
+  #     (no CREATE DATABASE / USE is emitted); it is kept only so the step is explicit.
   sed "s/\`$DB_BEFORE\`/\`DBNAME\`/g" "$EVIDENCE/schema-before.sql" > "$EVIDENCE/schema-before.norm.sql"
   sed "s/\`$DB_AFTER\`/\`DBNAME\`/g"  "$EVIDENCE/schema-after.sql"  > "$EVIDENCE/schema-after.norm.sql"
   set +e
   diff "$EVIDENCE/schema-before.norm.sql" "$EVIDENCE/schema-after.norm.sql" > "$EVIDENCE/schema.diff"
-  DIFF_STATUS=$?          # captured, asserted in step 11 - never discarded
+  DIFF_STATUS=$?          # captured, asserted in step 12 - never discarded
   set -e
   md5sum "$EVIDENCE"/schema-*.sql > "$EVIDENCE/checksums.txt"
+  wc -l -c "$EVIDENCE"/schema-*.sql > "$EVIDENCE/sizes.txt"
+  grep -c "^CREATE TABLE" "$EVIDENCE/schema-before.sql" > "$EVIDENCE/create-table-count-before.txt"
+  grep -c "^CREATE TABLE" "$EVIDENCE/schema-after.sql"  > "$EVIDENCE/create-table-count-after.txt"
+  grep -c "$DB_BEFORE" "$EVIDENCE/schema-before.sql" > "$EVIDENCE/dbname-occurrences-before.txt" || true
 
-  # 10. Shared database post-state must equal the pre-state. Asserted, not eyeballed.
-  mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
+  # 10a. The two engine logs must agree once timestamps are stripped: the same changesets in the
+  #      same order, with the same warnings. This is only a meaningful assertion because step 6c
+  #      made the two roots symmetric - otherwise it would compare two different log formatters.
+  for label in before after; do
+    sed -E -e 's/^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\] //' \
+           -e 's/Starting Liquibase at [0-9]{2}:[0-9]{2}:[0-9]{2}/Starting Liquibase at HH:MM:SS/' \
+      "$EVIDENCE/liquibase-update-$label.log" > "$EVIDENCE/liquibase-update-$label.norm.log"
+  done
+  if ! diff "$EVIDENCE/liquibase-update-before.norm.log" \
+            "$EVIDENCE/liquibase-update-after.norm.log" > "$EVIDENCE/engine-log.diff"
+  then
+    printf 'FATAL: the two engine logs differ beyond timestamps - see %s\n' \
+      "$EVIDENCE/engine-log.diff" >&2; exit 1
+  fi
+
+  # 11. Shared database post-state must equal the pre-state. Asserted, not eyeballed.
+  if ! mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
     "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$SHARED_DB'), \
             (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" > "$EVIDENCE/shared-db-after.txt"
-  cmp -s "$EVIDENCE/shared-db-before.txt" "$EVIDENCE/shared-db-after.txt" \
-    || { echo "FATAL: the shared database changed" >&2; exit 1; }
-
-  # 11. Verdict from the CAPTURED status. Expected: 0, with an empty schema.diff.
-  if [ "$DIFF_STATUS" -ne 0 ]; then
-    echo "FAIL: schemas differ - see $EVIDENCE/schema.diff" >&2; exit 1
+  then printf 'FATAL: cannot read the shared database post-state\n' >&2; exit 1; fi
+  if ! cmp -s "$EVIDENCE/shared-db-before.txt" "$EVIDENCE/shared-db-after.txt"; then
+    printf 'FATAL: the shared database changed\n' >&2; exit 1
   fi
-  echo "PASS: schemas identical"
+
+  # 12. Verdict from the CAPTURED status - and only after cleanup has been VERIFIED, because
+  #     a PASS printed while a disposable database or a credential file still existed would
+  #     be a false statement. The EXIT trap remains installed as a backstop.
+  if [ "$DIFF_STATUS" -ne 0 ]; then
+    printf 'FAIL: schemas differ - see %s\n' "$EVIDENCE/schema.diff" >&2; exit 1
+  fi
+  if ! cleanup; then
+    printf 'FATAL: schemas matched, but cleanup left %s resource(s) behind. NOT a pass.\n' \
+      "$CLEANUP_FAILURES" >&2
+    exit 78
+  fi
+  printf 'PASS: schemas identical, and every resource this run created was released\n'
+  printf 'evidence: %s\n' "$EVIDENCE"
 ```
 
 `$DB_PASS` is supplied by the operator from the environment (the containerised development server in
@@ -1041,12 +1401,21 @@ secret need never reach persistent storage at all.
 script refuses to start without it — `: "${DB_PASS:?…}"` — rather than silently attempting a passwordless
 connection.
 
-The run leaves three byproducts in the working tree — `api_cp.txt`, `base-changelogs/` and the
-`v3-evidence/` directory — and one zero-byte lock file under `$TMPDIR`. The first two are scratch; the
-third is the retained evidence the figures in (e).1 come from. None of them belongs in a commit, so delete
-them (or add them to a local exclude) once the evidence has been read. **Leave the lock file where it is**:
-it holds no data, and removing it while another run is in flight would break the mutual exclusion it
-exists to provide.
+The run leaves **exactly one** byproduct in the working tree: the per-run directory
+`./v3-evidence-<run-id>/`, which holds every artifact — including the extracted base-commit changelogs, the
+symmetric copy of the current-side changelogs and the resolved classpath, which earlier revisions scattered
+into the fixed paths `base-changelogs/` and `api_cp.txt`. The recorded run's directory measures **15 MB**,
+and the bulk of it is the two changelog trees at **6.8 MB each** — the dumps and engine logs together
+account for only **1.3 MB**. It does not belong in a commit, so delete it (or add `v3-evidence-*` to a
+local exclude)
+once the evidence has been read. Outside the working tree the run leaves one thing more: the owner-only
+lock directory `${XDG_RUNTIME_DIR:-$HOME}/.openmrs-v3-schema-diff` holding a **zero-byte, mode-600** lock
+file. **Leave both where they are**: the file holds no data — it is never written to, only `flock`ed —
+and removing it while another run is in flight would break the mutual exclusion it exists to provide.
+
+Nothing else survives the run. The credential directory and both credential files are removed by the
+verified cleanup, and the two disposable databases are dropped and then confirmed absent; if any of that
+had failed, the script would have exited **78** instead of printing `PASS`.
 
 ### 5. Why the Diff Is Empty by Construction
 
@@ -1171,8 +1540,14 @@ built, and none was needed.
 
 ## Change Inventory
 
-Every edit below carries a named attribution to the Spring 6+/Hibernate 6+/Jakarta/Java 21 target, as
-Rule 1 and TR1 require. Nineteen files were in the UPDATE set and one file — this document — was created.
+Every edit below carries a **named, per-edit attribution** — but of two distinct kinds, which the blanket
+wording of an earlier revision ("every edit … to the Spring 6+/Hibernate 6+/Jakarta/Java 21 target")
+flattened into one and thereby overstated. The migration edits, sections 1 through 5, each cite the target
+generation that Rule 1 and TR1 require. The five comment-only annotations in section 6 cite **Rule 5**
+instead, and must: Rule 5 exists precisely for defects that are *not* attributable to the target stack, so
+asserting a target-stack attribution for them would misstate why they were touched at all. The whitespace
+restorations recorded in section 3 cite Rule 1 in its negative form — they remove a change that had no
+attribution. Nineteen files were in the UPDATE set and one file — this document — was created.
 
 > **Note:** of those nineteen, **eighteen were actually modified**; the nineteenth, the root `pom.xml`,
 > was **verify-only** and therefore has an empty diff. Its inspection confirmed
@@ -1205,7 +1580,19 @@ Rule 1 and TR1 require. Nineteen files were in the UPDATE set and one file — t
 ### 3. Spring Configuration Modernization
 
 Five contexts moved to **versionless** XSD references. Contexts stay XML — XML-to-Java configuration
-conversion is explicitly **excluded**, and only the `xsi:schemaLocation` attribute changed:
+conversion is explicitly **excluded** — and only the `xsi:schemaLocation` attribute changed. That last clause
+is a measured statement rather than an assurance: across the five files the base-to-current diff contains
+**16 changed line pairs** (3 + 1 + 2 + 3 + 7), every one of them a versioned-to-versionless XSD token
+substitution whose **leading whitespace is byte-identical** between the removed and the added line, and
+**zero** changed lines fall outside a `springframework.org/schema/…` URL.
+
+It was not true of an earlier revision of this change, and saying so is the point of recording it here.
+Commit `1f5303b89` also re-indented the schema lines of three of these files to three tabs — style churn with
+no target-stack attribution, which Rule 1 and TR1 forbid. The original leading whitespace has been restored:
+**7 spaces + 2 tabs** in `applicationContext-service.xml` and `openmrs-servlet.xml`, and
+**2 spaces + 2 tabs + 4 spaces** in `webModuleApplicationContext.xml`. Each of the three is now
+byte-identical to its `1f5303b89^` state — `git diff 1f5303b89^ -- <file>` returns **0 lines** for all
+three — so the only surviving difference from the base commit is the XSD token itself:
 
 | Context | Grammars unpinned |
 |---|---|
@@ -1530,12 +1917,34 @@ jar is used.
   grep -E "commons-fileupload|groovy-all|commons-fileupload2" deptree.txt   # expect 0
   grep -c "liquibase-core" deptree.txt                                     # expect 6 (it must survive)
 
-  # A2  NOTICE.md attribution is truthful: nothing attributed that is no longer
-  #     shipped, while commons-collections, liquibase-core, the Infinispan entries,
-  #     jakarta.xml.bind-api, jaxb-runtime and type-converter all remain.
+  # A2  NOTICE.md attribution is truthful: nothing attributed that is no longer shipped,
+  #     while the coordinates that ARE still shipped keep their attribution.
+  grep -cE 'commons-fileupload|groovy-all' NOTICE.md          # expect 0
+  for c in commons-collections liquibase-core infinispan \
+           jakarta.xml.bind-api jaxb-runtime type-converter; do
+    printf '%-24s %s\n' "$c" "$(grep -ci "$c" NOTICE.md)"     # expect >= 1 for each
+  done
 
-  # A3  Spring contexts still load - exercised by every context-sensitive test in
-  #     the V2 run. Expect no BeanDefinitionParsingException and no XSD resolution failure.
+  # A3  Spring contexts still load. Be exact about which run proves what: the V2 test run
+  #     exercises FOUR of the five in-scope contexts, not all five.
+  #       applicationContext-service.xml     the api harness, via @ContextConfiguration
+  #       openmrs-servlet.xml                BaseWebContextSensitiveTest, BaseModuleWebContextSensitiveTest
+  #       moduleApplicationContext.xml       BaseModuleContextSensitiveTest (test-suite-module-api)
+  #       webModuleApplicationContext.xml    WebModuleActivatorTest, TestModuleControllerTest
+  #       openmrs_static_content-servlet.xml NOT loaded by any test - see below
+  #     Verify that last claim instead of trusting it. Nothing in the reactor names the FILE
+  #     at all - it is bound by Spring's <servlet-name>-servlet.xml convention:
+  git grep -n 'openmrs_static_content-servlet' -- . ':!doc/'   # expect 0 - the name is never written
+  git grep -n 'openmrs_static_content'         -- . ':!doc/'   # expect 2, both in web.xml
+  #     ...one declaring the servlet (class org.openmrs.web.StaticDispatcherServlet) and one
+  #     mapping it to /scripts/*. web.xml deliberately omits load-on-startup, so the context
+  #     is built on the FIRST /scripts/* request. The V2 run therefore cannot speak for it,
+  #     and this gate needs its own two proofs - an offline bean-definition load and a
+  #     request against the deployed WAR. Both are in section 4 below.
+  #     For the four contexts the V2 run does load, the passing condition is unchanged:
+  #     no BeanDefinitionParsingException and no XSD resolution failure anywhere in test.log.
+  grep -cE 'BeanDefinitionParsingException|XmlBeanDefinitionStoreException|Failed to read schema document' test.log
+  #     expect 0
 
   # A4  no versioned Spring grammar remains
   git ls-files '*.xml' | xargs grep -lE "spring-[a-z]+-[0-9]\.[0-9]\.xsd"  # expect 0
@@ -1559,50 +1968,131 @@ jar is used.
   # that was removed is the evidence, not a violation of it. Both gates measure
   # zero over '*.xml', which is the set that actually configures the container.
 
-  # A6  no transformation or shading plugin was introduced (Rule 2): still exactly
-  #     the 23 managed plugins, no transformer/shade/relocate.
+  # A6  no transformation or shading plugin was introduced (Rule 2).
+  git ls-files '*pom.xml' | xargs grep -lE \
+    'maven-shade-plugin|org\.eclipse\.transformer|jakartaee-migration|<relocation>'   # expect 0
+  #     ...and the managed plugin set is still exactly 23. Count <plugin> ELEMENTS, not
+  #     <artifactId> lines: a naive grep also counts the artifactIds of plugin-scoped
+  #     <dependencies>, which on this pom.xml inflates 23 to 27.
+  python3 -c "import xml.etree.ElementTree as E; n={'m':'http://maven.apache.org/POM/4.0.0'}; \
+print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugins',n) \
+.findall('m:plugin',n)))"                                                             # expect 23
 
   # A7  frozen artifacts untouched. Compare COMMITTED state against the base commit -
   #     a worktree-only `git diff` / `git status` reports nothing at a clean HEAD and
   #     therefore cannot verify a committed change at all.
+  #     The pathspec must name EVERY frozen artifact, including the seed database dump
+  #     initial_test_db.sql - which lives at the REPOSITORY ROOT, not under api/, and was
+  #     missing from an earlier revision of this gate. A frozen artifact absent from the
+  #     pathspec is simply not gated.
   BASE=3934d8086c684269e935562f25e806be91947115
-  git diff --name-status "$BASE"..HEAD -- \
-    'api/src/main/resources/liquibase-*.xml' \
-    'api/src/main/resources/org/openmrs/liquibase/**' \
-    'api/src/main/resources/**/*.hbm.xml' \
-    api/src/main/resources/hibernate.cfg.xml \
-    api/src/main/java/org/openmrs/aop/AOPConfig.java \
-    api/src/main/java/org/openmrs/aop/AuthorizationAdvice.java \
-    webapp/src/main/webapp/WEB-INF/web.xml                         # expect NO output
-  # Prove the gate is not vacuous - a pathspec that matches nothing also prints nothing:
-  git ls-files -- 'api/src/main/resources/liquibase-*.xml' \
-    'api/src/main/resources/org/openmrs/liquibase/**' \
-    'api/src/main/resources/**/*.hbm.xml' | wc -l                  # expect a non-zero count
+  FROZEN=(
+    'api/src/main/resources/liquibase-*.xml'
+    'api/src/main/resources/org/openmrs/liquibase/**'
+    'api/src/main/resources/**/*.hbm.xml'
+    api/src/main/resources/hibernate.cfg.xml
+    api/src/main/java/org/openmrs/aop/AOPConfig.java
+    api/src/main/java/org/openmrs/aop/AuthorizationAdvice.java
+    webapp/src/main/webapp/WEB-INF/web.xml
+    initial_test_db.sql
+  )
+  git diff --name-status "$BASE"..HEAD -- "${FROZEN[@]}"           # expect NO output
+  git status --porcelain -- "${FROZEN[@]}"                         # expect NO output (worktree too)
+  # Prove the gate is not vacuous - a pathspec that matches nothing also prints nothing.
+  # Count per pattern, so a single silently-unmatched pattern cannot hide behind the others:
+  for p in "${FROZEN[@]}"; do
+    printf '%-52s %s\n' "$p" "$(git ls-files -- "$p" | wc -l)"     # expect every count >= 1
+  done
 
   # A8  build wall clock shows no change of ORDER. Read Maven's own "Total time" line
   #     rather than an external stopwatch, and treat it as a sanity check, not a
   #     benchmark: neither the pre- nor the post-change run controlled for CPU
   #     contention or repository warmth, so a minutes-vs-minutes comparison is all
-  #     that is supportable. Measured here: install 01:21 min, test 09:53 min.
+  #     that is supportable. The logs must be RETAINED for the grep to have anything to
+  #     read - an earlier revision of this gate quoted timings while naming two files the
+  #     run had not kept, which is a figure a reader cannot check.
+  ./mvnw clean install -DskipTests -B > install.log 2>&1; echo "install exit=$?"
+  ./mvnw test -B                     > test.log    2>&1; echo "test exit=$?"
   grep -E '^\[INFO\] Total time' install.log test.log
+  grep -cE 'SUCCESS \[' install.log            # expect 13 - one per reactor project
+  #     Maven prints no reactor-WIDE test total, so sum the five per-module `Results:` blocks.
+  #     Do not tail the last one: `grep ... | tail -1` returns the final module's own total,
+  #     which is openmrs-test-suite-module-omod's single test - it looks like a passing check
+  #     while saying nothing about 5,106. Running this gate is what caught that.
+  grep -E '^\[INFO\] Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$' test.log \
+    | awk -F'[:,]' '{r+=$2;f+=$4;e+=$6;s+=$8;n++} \
+        END{printf "blocks=%d run=%d failures=%d errors=%d skipped=%d\n",n,r,f,e,s}'
+  #     expect exactly: blocks=5 run=5106 failures=0 errors=0 skipped=45
 
   # A9  formatting conforms. The -D flag is LOAD-BEARING: the root pom.xml sets
   #     <spotless.check.skip>true</spotless.check.skip> by default and only the
   #     ci-checks profile flips it, so a bare `./mvnw spotless:check` prints
   #     "Spotless check skipped" for every module and STILL EXITS 0 - a vacuous pass.
   ./mvnw spotless:check -B -Dspotless.check.skip=false      # expect BUILD SUCCESS, 0 violations
+  #     Measured, so that "it passed" is checkable: 12 of the 13 reactor projects genuinely
+  #     execute the goal. Only `openmrs-bom` prints "Spotless check skipped", and it does so
+  #     for its own reason - bom/pom.xml sets <skip>true</skip> in its plugin configuration,
+  #     which the -D flag does not override. The six Java-carrying modules report
+  #     1185 + 68 + 8 + 9 + 2 + 1 = 1,273 files "keeping ... clean - 0 needs changes":
+  #     the same 1,273 .java files the V5 namespace guard scans.
 
-  # A10 this document exists and is complete
-  test -f doc/JAKARTA_MIGRATION_BASELINE.md && echo present
+  # A10 this document exists AND is complete. `test -f` is a PRESENCE check, not a
+  #     completeness check - it passes on a zero-byte file - so assert the structure and
+  #     the mandated sections instead. An earlier revision of this gate stopped at `test -f`.
+  DOC=doc/JAKARTA_MIGRATION_BASELINE.md
+  if [ ! -f "$DOC" ]; then echo "FAIL: $DOC is missing" >&2; exit 1; fi
+  if [ "$(grep -c '^# ' "$DOC")" -ne 1 ]; then echo 'FAIL: not exactly one H1' >&2; exit 1; fi
+  if [ -n "$(tail -c 1 "$DOC")" ]; then echo 'FAIL: no terminating newline' >&2; exit 1; fi
+  if [ $(( $(grep -c '^```' "$DOC") % 2 )) -ne 0 ]; then
+    echo 'FAIL: unbalanced fenced code block' >&2; exit 1
+  fi
+  if grep -qE ' +$' "$DOC"; then echo 'FAIL: trailing whitespace' >&2; exit 1; fi
+  for h in 'Section (a):' 'Section (b):' 'Section (c):' 'Section (d):' 'Section (e):' \
+           'Section (f):' 'Change Inventory' 'Pre-Existing Defect Register' \
+           'Behavioural-Preservation Evidence' 'How to Reproduce' 'Definition of Done'; do
+    if ! grep -qF "## $h" "$DOC"; then echo "FAIL: missing section '$h'" >&2; exit 1; fi
+  done
+  echo 'PASS: A10 - document present, structurally sound, all mandated sections found'
 ```
 
-All of A1 through A10 were run against the changed tree and all passed. A4, A5 and A7 return zero over
-tracked source, with the build-output caveat on A5 recorded in the block above rather than left for a
-future reader to trip over; A9 reports `BUILD SUCCESS` with no file reformatted, using the explicit
-`-Dspotless.check.skip=false` that makes the goal actually execute; and A8 is satisfied in the only sense
-the evidence supports — `install` **01:21 min** and `test` **09:53 min**, both minutes-scale and both
-exiting 0, with **no** speed comparison drawn against the planning figures, for the reason set out in
-section (a).1.
+**A10's assertions were shown to bite, not merely to pass.** Six mutations, applied one at a time to a
+*copy* of this document, were each rejected with the message that names the specific defect: a second `# `
+H1 → `FAIL: not exactly one H1`; the terminating newline stripped → `FAIL: no terminating newline`; one
+fence deleted → `FAIL: unbalanced fenced code block`; a line given trailing spaces → `FAIL: trailing
+whitespace`; `## Definition of Done` deleted → `FAIL: missing section 'Definition of Done'`; the file
+removed → `FAIL: … is missing`. The unmutated copy passed. That is the same standard the schema validation
+in section 4 is held to — a check that cannot fail is not evidence.
+
+**Per-gate measured results.** An earlier revision summarised this as "all of A1 through A10 were run and
+all passed", which is an attestation a reader cannot check — and which had in fact survived one revision in
+which two of the ten gates were vacuous. The block above was therefore extracted from *this document* and
+executed verbatim, and every line it printed is reproduced here:
+
+| Gate | Command output, as printed | Expected | Verdict |
+|---|---|---|---|
+| A1 | removed-coordinate hits **0**; `liquibase-core` nodes **6** | 0; 6 | PASS |
+| A2 | `commons-fileupload\|groovy-all` in `NOTICE.md` **0**; `commons-collections` 1, `liquibase-core` 1, `infinispan` 1, `jakarta.xml.bind-api` 1, `jaxb-runtime` 1, `type-converter` 1 | 0; each ≥ 1 | PASS |
+| A3 | `openmrs_static_content-servlet` **0** hits; `openmrs_static_content` **2** hits (`web.xml:274`, `web.xml:323`); parse/schema failures in `test.log` **0** | 0; 2; 0 | PASS |
+| A4 | versioned Spring grammars over tracked `*.xml` — no output | 0 | PASS |
+| A5 | `java.sun.com/xml/ns/javaee` over tracked `*.xml` — no output | 0 | PASS |
+| A6 | shade/transformer/relocate — no output; managed `<plugin>` elements **23** | 0; 23 | PASS |
+| A7 | committed diff vs base — no output; worktree status — no output; per-pattern counts **6, 32, 20, 1, 1, 1, 1, 1** | no output ×2; each ≥ 1 | PASS |
+| A8 | `SUCCESS [` count **13**; `blocks=5 run=5106 failures=0 errors=0 skipped=45`; `Total time` **01:20 min** / **10:42 min** on run 1 and **01:21 min** / **10:47 min** on the run-2 re-execution — this gate rewrites both logs, so the timings are a sanity check on *order*, not a value to reproduce | 13; 5,106/0/0/45 | PASS |
+| A9 | `BUILD SUCCESS`, **0 violations**, no file reformatted | 0 violations | PASS |
+| A10 | `PASS: A10 - document present, structurally sound, all mandated sections found` | that line, exit 0 | PASS |
+
+Four of those rows carry a caveat that belongs with the number rather than in a footnote. **A4 and A5**
+measure *tracked* `*.xml` only, for the two reasons given in the block above — generated
+`web/target/spotbugsXml.xml` quotes the retired namespace in a report entry, and this document quotes it on
+purpose when recording the `override-web.xml` transformation. **A7**'s per-pattern counts are the
+non-vacuity proof: a pathspec matching nothing also prints nothing, so each of the eight frozen patterns is
+counted separately, and the count of **1** against `initial_test_db.sql` is the one an earlier revision of
+the gate could not have produced, because the pattern was absent. **A8** is satisfied only in the sense the
+evidence supports — both phases minutes-scale and both exiting 0, with **no** speed comparison drawn against
+the planning figures, for the reason set out in section (a).1; both timings are quoted from the `Total time`
+line of a **retained** log, which is why the gate now redirects to `install.log` and `test.log` instead of
+discarding the output. **A9**'s pass is non-vacuous only because of the explicit
+`-Dspotless.check.skip=false`, and 12 of the 13 projects genuinely execute the goal.
 
 ### 3. Reading a Negative Grep Correctly
 
@@ -1621,32 +2111,303 @@ each negative check so the intent is explicit:
 The same shape applies to V5, A1, A4 and A5. Every "expect 0 matches" comment in this document means
 *grep printed nothing and exited 1*, which is the passing outcome.
 
+### 4. Gate A3 in Full: What the Test Run Proves, and What It Cannot
+
+An earlier revision of gate A3 asserted that the contexts are "exercised by every context-sensitive test
+in the V2 run". For four of the five in-scope contexts that is true and citable. For the fifth it is
+false, and the gate is now split accordingly rather than left as a claim a reader cannot check.
+
+| In-scope context | Loaded by | Citation |
+|---|---|---|
+| `api/src/main/resources/applicationContext-service.xml` | the `api` harness, for every context-sensitive test | `@ContextConfiguration(locations = { "classpath:applicationContext-service.xml", … })` at `BaseContextSensitiveNonTransactionalTest:115` and `BaseModuleContextSensitiveTest:25` |
+| `web/src/main/resources/openmrs-servlet.xml` | the `web` harnesses | `classpath*:openmrs-servlet.xml` at `BaseWebContextSensitiveTest:24` and `BaseModuleWebContextSensitiveTest:26` |
+| `test-suite/module/api/src/main/resources/moduleApplicationContext.xml` | the `api` harness by wildcard, when the module is on the classpath | `classpath*:moduleApplicationContext.xml` at `BaseContextSensitiveNonTransactionalTest:115`, `BaseModuleContextSensitiveTest:25` |
+| `test-suite/module/omod/src/main/resources/webModuleApplicationContext.xml` | `WebModuleActivatorTest` and the module web harness | `classpath*:webModuleApplicationContext.xml` at `WebModuleActivatorTest:47`, `BaseModuleWebContextSensitiveTest:26` |
+| `webapp/src/main/webapp/WEB-INF/openmrs_static_content-servlet.xml` | **no test at all** | see below |
+
+The fifth context is not referenced by name **anywhere** in the reactor —
+`git grep -n 'openmrs_static_content-servlet' -- . ':!doc/'` returns **0 hits**, and the broader
+`git grep -n 'openmrs_static_content'` returns exactly **2**, both in
+`webapp/src/main/webapp/WEB-INF/web.xml`: the servlet declaration at line 274
+(`<servlet-class>org.openmrs.web.StaticDispatcherServlet</servlet-class>`, itself a subclass of Spring's
+`DispatcherServlet`) and its `/scripts/*` mapping at line 323. The file is bound to that servlet purely by
+Spring's `<servlet-name>-servlet.xml` convention, and `web.xml` deliberately omits `load-on-startup` —
+"Don't use load-on-startup in case initial setup wizard is needed" — so the context is built on the
+**first `/scripts/*` request**, in a servlet container, which is precisely what a `mvn test` run never does.
+
+It therefore gets two proofs of its own.
+
+**Proof 1 — offline bean-definition load and grammar validation.** One self-contained program, run with the
+Java 21 single-file source launcher against the `web` module's own classpath, so both the XSDs and the
+Spring generation are the ones the build resolves. Part 1 validates each context with a *validating* parser
+whose `EntityResolver` is Spring's own `PluggableSchemaResolver`, which maps every
+`http://www.springframework.org/schema/…` URL to the copy inside the jars — no network, and the grammar
+exercised is the shipped one. Part 2 reads the orphan context's bean definitions.
+
+```java
+  import java.io.File;
+  import javax.xml.parsers.DocumentBuilder;
+  import javax.xml.parsers.DocumentBuilderFactory;
+
+  import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+  import org.springframework.beans.factory.xml.PluggableSchemaResolver;
+  import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+  import org.springframework.core.io.FileSystemResource;
+  import org.xml.sax.ErrorHandler;
+  import org.xml.sax.SAXParseException;
+
+  public class A3ContextProof {
+
+  	public static void main(String[] args) throws Exception {
+  		int invalid = 0;
+  		for (String path : args) {
+  			DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+  			f.setNamespaceAware(true);
+  			f.setValidating(true);
+  			f.setAttribute("http://java.sun.com/xml/jaxp/properties/schemaLanguage",
+  				"http://www.w3.org/2001/XMLSchema");
+  			DocumentBuilder b = f.newDocumentBuilder();
+  			b.setEntityResolver(new PluggableSchemaResolver(A3ContextProof.class.getClassLoader()));
+  			final int[] errs = new int[1];
+  			b.setErrorHandler(new ErrorHandler() {
+  				public void warning(SAXParseException e) { System.out.println("  WARN  " + e.getMessage()); }
+  				public void error(SAXParseException e) { errs[0]++; System.out.println("  ERROR " + e.getMessage()); }
+  				public void fatalError(SAXParseException e) throws SAXParseException { errs[0]++; throw e; }
+  			});
+  			b.parse(new File(path));
+  			System.out.println((errs[0] == 0 ? "VALID   " : "INVALID ") + path);
+  			invalid += errs[0] == 0 ? 0 : 1;
+  		}
+
+  		String orphan = "webapp/src/main/webapp/WEB-INF/openmrs_static_content-servlet.xml";
+  		DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
+  		XmlBeanDefinitionReader reader = new XmlBeanDefinitionReader(factory);
+  		reader.setValidating(true);
+  		int count = reader.loadBeanDefinitions(new FileSystemResource(orphan));
+  		System.out.println("LOADED " + count + " bean definitions from " + orphan);
+  		for (String name : factory.getBeanDefinitionNames()) {
+  			System.out.println("  bean " + name + " -> " + factory.getBeanDefinition(name).getBeanClassName());
+  		}
+
+  		System.out.println("contexts=" + args.length + " invalid=" + invalid + " definitions=" + count);
+  		if (invalid != 0 || count == 0) {
+  			System.exit(1);
+  		}
+  	}
+  }
+```
+
+Resolve the classpath once, then run it over all five contexts:
+
+```bash
+  ./mvnw -B -q -o -pl web dependency:build-classpath \
+    -Dmdep.outputFile="$PWD/web_cp.txt" -Dmdep.includeScope=test
+  java -cp "$(cat web_cp.txt)" A3ContextProof.java \
+    api/src/main/resources/applicationContext-service.xml \
+    web/src/main/resources/openmrs-servlet.xml \
+    webapp/src/main/webapp/WEB-INF/openmrs_static_content-servlet.xml \
+    test-suite/module/api/src/main/resources/moduleApplicationContext.xml \
+    test-suite/module/omod/src/main/resources/webModuleApplicationContext.xml
+```
+
+Measured output, verbatim, exit status **0**:
+
+```text
+  VALID   api/src/main/resources/applicationContext-service.xml
+  VALID   web/src/main/resources/openmrs-servlet.xml
+  VALID   webapp/src/main/webapp/WEB-INF/openmrs_static_content-servlet.xml
+  VALID   test-suite/module/api/src/main/resources/moduleApplicationContext.xml
+  VALID   test-suite/module/omod/src/main/resources/webModuleApplicationContext.xml
+  LOADED 6 bean definitions from webapp/src/main/webapp/WEB-INF/openmrs_static_content-servlet.xml
+    bean viewResolver -> org.springframework.web.servlet.view.InternalResourceViewResolver
+    bean handlerMapping -> org.springframework.web.servlet.handler.SimpleUrlHandlerMapping
+    bean staticResourceDispatcher -> org.openmrs.web.StaticResourceDispatcher
+    bean urlRewrites -> org.springframework.beans.factory.config.MapFactoryBean
+    bean staticContentController -> org.openmrs.web.controller.PseudoStaticContentController
+    bean jstlContentController -> org.openmrs.web.controller.PseudoStaticContentController
+  contexts=5 invalid=0 definitions=6
+```
+
+**The validation is not vacuous, and that was demonstrated rather than assumed.** A deliberately invalid
+context — a `<beans>` document containing `<notAnElement id="x"/>` under the same versionless
+`spring-beans.xsd` reference — is rejected:
+
+```text
+  ERROR cvc-complex-type.2.4.a: Invalid content was found starting with element
+  '{"http://www.springframework.org/schema/beans":notAnElement}'. One of
+  '{…:description, …:import, …:alias, …:bean, WC[##other:…], …:beans}' is expected.
+  INVALID blitzy_adhoc_tmp/negative-control.xml
+  contexts=1 invalid=1 definitions=6
+```
+
+It prints `INVALID`, reports `invalid=1` and exits **1**. A validator that accepted everything — the usual
+failure mode of a schema check that silently could not fetch its grammar — would have passed it.
+
+**Proof 2 — the context initialized and served, inside a real servlet container.** Proof 1 establishes that
+the grammar resolves and that the six definitions parse. It cannot establish that the servlet starts, that
+the handler chain runs, or that the `urlRewrites` map is ever consulted, because none of that happens outside
+a container. So the WAR produced by the A8 `install` was deployed to Tomcat 11.0.21 on JDK 21, and the two
+URL families this context governs were requested:
+
+```bash
+  # deploy the WAR the A8 install produced, onto Tomcat 11 / JDK 21, port 8080
+  cp webapp/target/openmrs.war /opt/tomcat11/webapps/openmrs.war
+  /opt/tomcat11/bin/startup.sh
+
+  # the canonical URL, then the legacy URL that util:map rewrites onto it
+  curl -s -o /tmp/canon.js  -w '%{http_code} %{size_download} %{content_type}\n' \
+    http://localhost:8080/openmrs/scripts/jquery/jquery.min.js
+  curl -s -o /tmp/legacy.js -w '%{http_code} %{size_download} %{content_type}\n' \
+    http://localhost:8080/openmrs/scripts/jquery/jquery-1.3.2.min.js
+  cmp /tmp/canon.js /tmp/legacy.js && echo IDENTICAL
+
+  # the file exists ONLY under WEB-INF, and the container must refuse that path directly
+  find /opt/tomcat11/webapps/openmrs -maxdepth 2 -name scripts -not -path '*/WEB-INF/*'   # expect no output
+  curl -s -o /dev/null -w '%{http_code}\n' \
+    http://localhost:8080/openmrs/WEB-INF/view/scripts/jquery/jquery.min.js               # expect 404
+  # a missing script must come back 404, not 500
+  curl -s -o /dev/null -w '%{http_code}\n' \
+    http://localhost:8080/openmrs/scripts/does-not-exist-1234.js                          # expect 404
+```
+
+Measured against the WAR from that `install` — 141,023,727 bytes, copied at 16:02:20, exploded at 16:02:22,
+`Server startup in [14842] milliseconds`. Every byte count below was read from the browser's own network
+activity and independently agrees with the `content-length` header, `PerformanceNavigationTiming`'s
+`encodedBodySize` and `decodedBodySize`, the in-DOM text length, the saved response body on disk, and
+Tomcat's `localhost_access_log`:
+
+| # | Request | Status | Content-Type | Bytes | Redirects |
+|---|---|---|---|---|---|
+| 1 | `/openmrs/scripts/jquery/jquery.min.js` (canonical) | **200** | `text/javascript;charset=UTF-8` | **93,868** | 0 |
+| 2 | `/openmrs/scripts/jquery/jquery-1.3.2.min.js` (legacy, rewritten) | **200** | `text/javascript;charset=UTF-8` | **93,868** | 0 |
+| 3 | `/openmrs/scripts/jquery-ui/js/jquery-ui-1.7.2.custom.min.js` | **200** | `text/javascript;charset=UTF-8` | **207,478** | 0 |
+| 4 | `/openmrs/scripts/jquery-ui/css/redmond/jquery-ui-1.7.2.custom.css` | **200** | `text/css;charset=UTF-8` | **31,854** | 0 |
+| 5 | `/openmrs/scripts/this-path-does-not-exist-9876.js` | **404** | `text/html;charset=utf-8` | 829 | 0 |
+| 6 | `/openmrs/` (application root) | **404** | `text/html;charset=utf-8` | 739 | 0 |
+
+Requests 1 and 2 returned **byte-identical** bodies: `cmp` reports 0 differing bytes, both hash to SHA-256
+`88171413fc76dda23ab32baa17b11e4fff89141c633ece737852445f1ba6c1bd`, and both responses carry the identical
+`ETag: W/"93868-1785472180000"`, so the server served the same underlying entity. It did so **without a
+redirect**, established four independent ways: `redirectCount`, `redirectStart` and `redirectEnd` are all 0;
+`location.href` still ends in `jquery-1.3.2.min.js`, so the address bar never changed; there is no `Location`
+header; and the access log records exactly one server-side request for the legacy URL with no follow-on
+request to the canonical one. The session histogram is **6 × 200, 3 × 404, zero 3xx, zero 5xx** — the third
+404 being Chrome's own unsolicited `/favicon.ico` probe against the Tomcat ROOT context.
+
+**Four independent lines of evidence make this a proof of initialization rather than a smoke test:**
+
+- **The 200s are not attributable to the default servlet.** Every one of those files exists *only* under
+  `WEB-INF/view/`; `find` confirms there is no `scripts/` directory anywhere outside `WEB-INF` in the exploded
+  application, and the container refuses the underlying path directly —
+  `/openmrs/WEB-INF/view/scripts/jquery/jquery.min.js` returns **404**. A 200 on `/scripts/…` is therefore
+  only reachable through `viewResolver`'s `/WEB-INF/view` prefix, that is, through this context.
+- **All three `urlRewrites` entries demonstrably fired, provable from content rather than from byte counts.**
+  The URL asking for jQuery **1.3.2** returned a body whose banner reads
+  `/*! jQuery v1.7.1 jquery.com | jquery.org/license */` and whose code declares `jquery:"1.7.1"`; the URL
+  asking for jQuery UI **1.7.2** returned the `jQuery UI 1.8.2` banner with `c.extend(c.ui,{version:"1.8.2"…})`;
+  and the `redmond` CSS URL returned the file carrying the Redmond ThemeRoller signature
+  (`bgColorHeader=5c9ccc`, `bgTextureHeader=12_gloss_wave.png`). Those substitutions can only come from the
+  `<util:map id="urlRewrites">` bean — which is resolved through the `util` namespace whose XSD this change
+  made **versionless**. That is direct runtime proof the versionless grammar resolves on the shipped classpath.
+- **Both 404s are informative, not merely non-failing.** Request 5's body reads `The requested resource
+  [/openmrs/WEB-INF/view/scripts/this-path-does-not-exist-9876.js] is not available` — the `/WEB-INF/view`
+  segment is absent from the request URL and could only have been prepended by an initialized
+  `InternalResourceViewResolver`, so the whole handler chain ran and only the final file lookup failed.
+  Request 6's body reads `No endpoint GET /openmrs/.`, which is Spring `DispatcherServlet`'s own no-handler
+  wording rather than the container's — two *different* live servlets produced the two 404s. A root 404 is the
+  correct result for a core WAR whose user interface ships in downstream `.omod` modules.
+- **The container logged the initialization explicitly.** `/opt/tomcat11/logs/localhost.<date>.log` records
+  `INFO [http-nio-8080-exec-2] org.apache.catalina.core.ApplicationContext.log Initializing Spring
+  StaticDispatcherServlet 'openmrs_static_content'` at 16:03:05.916 — the lazy initialization firing on the
+  first `/scripts/*` request after the 16:02:22 deployment, with no error after it.
+
+Searching all three Tomcat log files and all six response bodies for
+`BeanDefinitionParsingException`, `XmlBeanDefinitionStoreException`, `SAXParseException` and
+`Failed to read schema document` returns **0 hits**, as does a scan for stack-trace markers; the `<pre>`
+element count on both error pages is **0**, which is exactly where Tomcat would render a trace. The browser
+console produced exactly one distinct message for the whole session — an `error`-level
+`Failed to load resource: the server responded with a status of 404 ()`, attributable to the two intentional
+404 navigations and the favicon probe — with zero warnings, zero JavaScript errors, and no console output at
+all from requests 1 through 4. The shared `openmrs` database was **unchanged** by the deployment: 126 tables
+and 1,065 applied changesets both before and after, so this proof neither depended on nor altered schema
+state.
+
+Two disclosures, so that the evidence is not read as stronger than it is. First, a screen recording of the
+same six-URL flow exists as motion evidence only: in that second pass, requests 1 through 4 were satisfied
+from Chrome's HTTP cache — those responses carry `ETag` and `Last-Modified` — so only the two 404s reached
+the server. Every status, content type and byte count quoted above comes from the first pass, whose six
+server round-trips are individually present in the access log. Second, the day's access log also holds five
+`500` responses, all on `GET /openmrs/moduleResources/nonexistent` and all timestamped roughly ninety minutes
+*before* this deployment, so they belong to an earlier deployment in an earlier session and to a URL that is
+not under test here. They are outside this document's scope, are not caused by anything this change touches,
+and are recorded only so that the log audit is not presented as cleaner than it is.
+
 ## Definition of Done
 
-- [x] `./mvnw clean install -DskipTests -B` exits **0** with all **13** reactor projects building.
-- [x] `./mvnw test -B` reports exactly **5,106 run / 0 failures / 0 errors / 45 skipped**, with no
-      assertion modified, no test deleted and no new `@Disabled`.
+Each box below cites the value that was measured, not merely the fact that a check was run. Where an earlier
+revision of this list asserted an outcome in the abstract, the number that settles it now appears beside it.
+
+- [x] `./mvnw clean install -DskipTests -B` exits **0** with all **13** reactor projects reporting
+      `SUCCESS` — `grep -cE 'SUCCESS \[' install.log` = **13**, twice, on two independent runs of the same
+      tree (`Total time` **01:20 min** then **01:21 min**). The count of 13 is the reproducible part; the
+      wall clock is a per-run sample, and gate A8 overwrites the log it is read from.
+- [x] `./mvnw test -B` reports exactly **5,106 run / 0 failures / 0 errors / 45 skipped**, arrived at by
+      summing the five per-module `Results:` blocks — 4,929 + 146 + 24 + 6 + 1, with all 45 skips in
+      `openmrs-api` — rather than by transcription. No assertion was modified, no test deleted and no new
+      `@Disabled` added, and that is measured rather than asserted: **0** test-source files differ from the
+      base commit and **0** `@Disabled` lines were added to any `.java` file. The 45 is a ceiling, and it
+      held.
 - [x] `./mvnw dependency:tree -B` shows **zero `javax.*` dependency-tree nodes** — not merely zero
-      `servlet` and `persistence` nodes.
-- [x] `grep -rE "import javax\.(servlet|persistence|validation|annotation|transaction)"` returns zero hits.
-- [x] The three removed coordinates are absent from the graph and from `NOTICE.md`, and no other
-      attribution was disturbed.
-- [x] No file under the frozen sets appears in `git diff --name-status "$BASE"..HEAD` for the frozen
-      pathspecs (the committed-range form; a worktree-only `git diff` proves nothing at a clean HEAD).
-- [x] This document exists and carries the full evidence trail, including the executed section (e)
-      comparison and the phase-labelled environment history behind it.
-- [x] Every UPDATE is traceable to a named target-stack justification, and every one of the seven
-      pre-existing defect register items is **left unfixed and recorded** — items 1-5 with an in-place
+      `servlet` and `persistence` nodes — across all **1,620** lines of output.
+- [x] `grep -rE "import javax\.(servlet|persistence|validation|annotation|transaction)"` returns zero hits,
+      confirmed three independent ways on a *built* tree: the recursive `--include=*.java` form, a
+      tracked-files `git grep`, and a recursive scan over every file type — **0, 0 and 0**. The **94**
+      surviving `javax.*` imports are all JDK-shipped and out of scope by definition (`javax.xml` 73,
+      `javax.swing` 8, `javax.imageio` 6, `javax.crypto` 5, `javax.sql` 2).
+- [x] The three removed coordinates are absent from the graph and from `NOTICE.md` — **0** hits in each —
+      and no other attribution was disturbed: `commons-collections`, `liquibase-core`, `infinispan`,
+      `jakarta.xml.bind-api`, `jaxb-runtime` and `type-converter` each still resolve to **≥ 1** line.
+- [x] No file under the frozen sets appears in **either** the committed-range `git diff --name-status
+      "$BASE"..HEAD` **or** the worktree `git status --porcelain` over the frozen pathspec — both return no
+      output. The pathspec names **eight** patterns, `initial_test_db.sql` among them, and each is
+      separately proven to match at least one tracked file (**6, 32, 20, 1, 1, 1, 1, 1**), so no pattern
+      passes by matching nothing.
+- [x] `./mvnw spotless:check -B -Dspotless.check.skip=false` reports **0 violations** with no file
+      reformatted. The `-D` flag is load-bearing — without it the goal is skipped and still exits 0 — and
+      **12** of the 13 projects genuinely execute it, covering **1,273** `.java` files.
+- [x] This document exists **and is structurally complete**, which is a stronger claim than presence and is
+      checked as such: gate A10 asserts a single `# ` H1, a terminating newline, balanced fences, no
+      trailing whitespace and every mandated section heading, and those assertions were shown to reject six
+      deliberate mutations of a copy.
+- [x] Every UPDATE is traceable to a **named attribution** — of the two distinct kinds set out at the head
+      of the Change Inventory: the target generation for the migration edits, and **Rule 5** for the five
+      comment-only annotations, which by definition are *not* target-stack-attributable. Every one of the
+      seven pre-existing defect register items is **left unfixed and recorded** — items 1-5 with an in-place
       comment at their own site, items 6 and 7 in the register only, because the 18 locale catalogues and
       the byte-identical verify-only root `pom.xml` are not files this change may annotate. See the
       "where each item is recorded" table in the Pre-Existing Defect Register.
+- [x] The one in-scope Spring context that **no test loads** —
+      `webapp/src/main/webapp/WEB-INF/openmrs_static_content-servlet.xml`, referenced by name **0** times
+      in the reactor — is proven to work by its own two proofs rather than covered by a claim about the
+      test run: an offline `XmlBeanDefinitionReader` load of its **6** bean definitions under the
+      versionless grammars, and a deployed-WAR request pass on Tomcat 11 in which the canonical and the
+      internally rewritten URL both return **HTTP 200** with byte-identical **93,868**-byte bodies and no
+      redirect. Section 4 of "How to Reproduce" carries both, with their negative controls.
 - [x] The clean-database Liquibase run and `mysqldump --no-data` schema diff — **executed**, not merely
       documented: two disposable, per-run databases installed by `liquibase-core` 4.32.0 from
       base-commit and current changelog bytes, both dumped and compared. **`diff` exit status 0, zero
       differing lines, both dumps byte-identical at MD5 `659f521033a44a4b95e57fe0bbe105a9`
       (3,389 lines / 175,156 bytes each), 119 tables / 1,510 columns / 697 indexes / 446 foreign keys /
       1,028 changesets on each side, and the shared `openmrs` database asserted unchanged at
-      126 catalogued tables / 1,065 changesets.** The runnable script — no credential in argv, fail-closed creation
+      126 catalogued tables / 1,065 changesets.** The comparison is also proven *symmetric* before it is
+      believed: the two changelog file **sets** are compared sorted before any byte comparison
+      (`38 files compared, 0 differing`, empty file-set diff), the current side is staged through an
+      identically shaped root that is itself `cmp`-verified (`38 files copied from the working tree,
+      0 differing`), and the two Liquibase engine logs are diffed after timestamp normalisation to
+      **0 lines** — **1,169** lines and **1,028** `Running Changeset:` entries on each side, with the same
+      **116** benign primary-key naming warnings and **zero** `ServiceConfigurationError`. That last check
+      is what caught a real asymmetry in an earlier revision of the script, where the two sides ran with
+      different classpath roots and their logs diverged by 135 lines. The runnable script — no credential in argv, fail-closed creation
       under an `flock`, an idempotent `EXIT`-only cleanup that owns only what it created, and `INT`/`TERM`
       handlers that exit 130/143 — and the retained evidence files are in section (e).4.
 
