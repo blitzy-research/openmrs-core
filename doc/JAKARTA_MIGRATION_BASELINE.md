@@ -60,11 +60,27 @@ forbidden on three independent grounds:
 
 1. **The PRESERVE clause** — framework-migration work already merged at the base commit is fixed
    baseline: *build on it, do not restructure it*. A downgrade would delete merged work.
-2. **The lock-step version chain** — Spring 7.0.7 requires Hibernate ORM 7.3.2.Final, which requires
-   Hibernate Search 8.3.0.Final, which requires Lucene 10.4.0, alongside Infinispan 15.2.6.Final.
-   None can be bumped, or dropped, in isolation.
+2. **The lock-step version chain** — Spring 7.0.7, Hibernate ORM 7.3.2.Final, Hibernate Search
+   8.3.0.Final with the Lucene line its backend resolves, and Infinispan 15.2.6.Final move as one
+   set. None can be bumped, or dropped, in isolation.
 3. **The floor is exceeded at the API-generation level**, not merely at the implementation level —
    see the comparison table in section (c).
+
+> **Note — which Lucene, and why "requires" is the wrong verb.** The figure recorded during planning said
+> Hibernate Search 8.3.0.Final "requires Lucene 10.4.0". Measured, it does not.
+> `hibernate-search-backend-lucene:8.3.0.Final` declares exactly five Lucene coordinates in its own POM —
+> `lucene-core`, `lucene-analysis-common`, `lucene-queryparser`, `lucene-join` and `lucene-highlighter` —
+> and every one of them at **9.12.3**; the resolved `api` graph carries **9** Lucene artifacts at 9.12.3
+> and exactly **1** at 10.4.0. That one is `org.apache.lucene:lucene-analysis-phonetic`, and it reaches the
+> graph as a **direct** `api` dependency — declared in `api/pom.xml`, version-managed from `luceneVersion`
+> in `bom/pom.xml` — because
+> `api/src/main/java/org/openmrs/api/db/hibernate/search/lucene/LuceneConfig.java` needs
+> `PhoneticFilterFactory` for its `SOUNDEX_ANALYZER`. Verify with
+> `./mvnw -o dependency:tree -pl api -B | grep org.apache.lucene`. The resulting mixed-major state is
+> **pre-existing**, is exercised green by the 5,106-test suite, and no Lucene version change is
+> attributable to the Spring/Hibernate/Jakarta/Java-21 target, so Rule 1 leaves the coordinates exactly as
+> they are — what is corrected here is the *description* of them, because a causal claim this document
+> cannot measure has no place in it.
 
 ### 3. Toolchain
 
@@ -1990,8 +2006,12 @@ jar is used.
   git ls-files '*pom.xml' | xargs grep -lE \
     'maven-shade-plugin|org\.eclipse\.transformer|jakartaee-migration|<relocation>'   # expect 0
   #     ...and the managed plugin set is still exactly 23. Count <plugin> ELEMENTS, not
-  #     <artifactId> lines: a naive grep also counts the artifactIds of plugin-scoped
-  #     <dependencies>, which on this pom.xml inflates 23 to 27.
+  #     <artifactId> lines: a naive grep also counts the artifactIds nested INSIDE a plugin's
+  #     own <configuration>, which on this pom.xml inflates 23 to 27. Measured, those four are
+  #     one spotbugs <configuration><plugins> entry (findsecbugs-plugin) and three m2e
+  #     lifecycleMappingMetadata pluginExecutionFilter entries (spotless-maven-plugin,
+  #     maven-antrun-plugin, maven-dependency-plugin). Not one of them is a plugin-scoped
+  #     <dependencies> artifactId - no managed plugin in this pom.xml declares that element.
   python3 -c "import xml.etree.ElementTree as E; n={'m':'http://maven.apache.org/POM/4.0.0'}; \
 print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugins',n) \
 .findall('m:plugin',n)))"                                                             # expect 23
@@ -2064,10 +2084,24 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
     echo 'FAIL: unbalanced fenced code block' >&2; exit 1
   fi
   if grep -qE ' +$' "$DOC"; then echo 'FAIL: trailing whitespace' >&2; exit 1; fi
+  #     Each heading must be matched as a FIXED STRING ANCHORED AT COLUMN 1, and all three
+  #     obvious shorter forms were measured against this document and rejected:
+  #       grep -qF "## $h"   unanchored - the mutation list below quotes one mandated heading
+  #                          verbatim inside backticks, so that quotation satisfies the search
+  #                          even after the real heading is deleted. The check then CANNOT
+  #                          FAIL, which is the one thing a gate may not do.
+  #       grep -qxF "## $h"  demands a whole-line match and so misses the six 'Section (x):'
+  #                          headings, every one of which carries a title after the colon.
+  #       grep -qE "^## $h"  reads the parentheses in 'Section (a):' as a regex group and
+  #                          matches nothing - it would fail the gate on a valid document.
+  #     awk's index($0,h)==1 is literal and anchored at once, so each heading is tested exactly
+  #     as written, wherever the prose happens to mention it.
   for h in 'Section (a):' 'Section (b):' 'Section (c):' 'Section (d):' 'Section (e):' \
            'Section (f):' 'Change Inventory' 'Pre-Existing Defect Register' \
            'Behavioural-Preservation Evidence' 'How to Reproduce' 'Definition of Done'; do
-    if ! grep -qF "## $h" "$DOC"; then echo "FAIL: missing section '$h'" >&2; exit 1; fi
+    if ! awk -v h="## $h" 'index($0,h)==1{found=1} END{exit !found}' "$DOC"; then
+      echo "FAIL: missing section '$h'" >&2; exit 1
+    fi
   done
   echo 'PASS: A10 - document present, structurally sound, all mandated sections found'
 ```
@@ -2079,6 +2113,14 @@ fence deleted → `FAIL: unbalanced fenced code block`; a line given trailing sp
 whitespace`; `## Definition of Done` deleted → `FAIL: missing section 'Definition of Done'`; the file
 removed → `FAIL: … is missing`. The unmutated copy passed. That is the same standard the schema validation
 in section 4 is held to — a check that cannot fail is not evidence.
+
+The heading-deletion control is also what dictates *how* the section check has to be written, and it is the
+reason the gate matches each heading as a literal anchored at **column 1** rather than as a bare fixed
+string: the sentence above quotes `## Definition of Done` verbatim inside backticks, so an unanchored
+`grep -F` finds the quotation and survives deletion of the real heading — that control would report a pass
+on a document missing the section it names. Anchoring removes the loophole for every heading at once, and
+the anchored form is non-vacuous by measurement: each of the **eleven** mandated headings occurs exactly
+**once** at column 1 in this document, so no section can be satisfied by a mention of itself in prose.
 
 **Per-gate measured results.** An earlier revision summarised this as "all of A1 through A10 were run and
 all passed", which is an attestation a reader cannot check — and which had in fact survived one revision in
