@@ -951,9 +951,11 @@ it safe to publish and safe to re-run:
   **regular file owned by this uid** — never a symlink — and it is opened with `exec 9<>`, i.e.
   `O_RDWR|O_CREAT` and **never `O_TRUNC`**, so the descriptor cannot truncate or write anything through a
   path someone else controls. Measured after the recorded run: directory `700`, lock file mode `600` and
-  **0 bytes**. The lock's scope is exactly *one concurrent run per user per host*, which is what the
-  comparison needs, and no more.
-- **Credentials on a verified `tmpfs`, chosen without consulting `TMPDIR` at all.** An earlier revision
+  **0 bytes**. The lock's scope is exactly *one concurrent run per resolved lock path*: two runs serialise
+  while `XDG_RUNTIME_DIR` — or, when it is unset, `HOME` — resolves to the same directory for both, so keep
+  that resolution consistent across the runs that must not overlap. That is what the comparison needs, and
+  no more.
+- **Credentials on a verified `tmpfs`, preferred without consulting `TMPDIR`.** An earlier revision
   preferred `CRED_DIR="${TMPDIR:-}"`, which let a caller-supplied variable send the plaintext password to
   persistent — or hostile — storage and bypassed the `tmpfs` preference entirely; that is **withdrawn**.
   The script now selects `/dev/shm` only after checking that it is a directory, **not** a symlink,
@@ -1028,8 +1030,13 @@ cannot do so says so out loud.
 > that is disposable. An earlier revision of this document recommended substituting `shred -u` "if a
 > shredding guarantee is required"; that advice was wrong and is **withdrawn**.
 
+Save the block below to a file and run it; it is the script, not an excerpt of one. Its
+`#!/usr/bin/env bash` line sits **flush left on purpose** — the kernel honours an interpreter directive
+only when the `#!` occupies the first two bytes of the file — while the two-space indentation on the
+remaining lines is this document's own formatting, which the shell ignores.
+
 ```bash
-  #!/usr/bin/env bash
+#!/usr/bin/env bash
   set -euo pipefail
 
   BASE_COMMIT=3934d8086c684269e935562f25e806be91947115
@@ -1038,7 +1045,10 @@ cannot do so says so out loud.
   : "${DB_PASS:?export DB_PASS before running; no credential is written into this document}"
   : "${HOME:?HOME must be set: the lock lives in a stable owner-only directory, not in TMPDIR}"
 
-  # 0. Per-run identity FIRST: every path and every database name below derives from it.
+  # 0. Per-run identity FIRST: both disposable database names, the evidence directory and the
+  #    credential directory take their names from it. The lock in step 2 deliberately does NOT -
+  #    it has to be stable, because two runs can only contend for a path they both compute the
+  #    same way, so it is derived from the environment instead.
   #    48 bits from the kernel CSPRNG. A collision is not impossible, merely negligible
   #    (~1 in 2.8e14 per pair of runs), and every use of the value is fail-closed anyway:
   #    the CREATE has no preceding DROP, the evidence directory is created with a plain
@@ -1151,10 +1161,12 @@ cannot do so says so out loud.
 
   # 2. Mutual exclusion on a STABLE, owner-only path. The lock is deliberately NOT derived
   #    from TMPDIR: two runs with different TMPDIR values would otherwise take two different
-  #    locks and overlap. Scope: one concurrent run per user per host. The file is opened
-  #    read-write with O_CREAT and WITHOUT O_TRUNC, so nothing is ever written or destroyed
-  #    through it, and the directory is verified owner-only first, so no other user can
-  #    plant a symlink in it.
+  #    locks and overlap. Scope: one concurrent run per RESOLVED LOCK PATH - runs serialise
+  #    only while XDG_RUNTIME_DIR (or HOME, when it is unset) resolves to the same directory
+  #    for each of them, so keep that resolution consistent across the runs that must not
+  #    overlap. The file is opened read-write with O_CREAT and WITHOUT O_TRUNC, so nothing is
+  #    ever written or destroyed through it, and the directory is verified owner-only first,
+  #    so no other user can plant a symlink in it.
   umask 077                                   # every file and directory below is private
   LOCK_DIR="${XDG_RUNTIME_DIR:-$HOME}/.openmrs-v3-schema-diff"
   if [ -e "$LOCK_DIR" ] && [ ! -d "$LOCK_DIR" ]; then
@@ -1181,10 +1193,13 @@ cannot do so says so out loud.
     printf 'FATAL: another comparison run holds %s\n' "$LOCK_FILE" >&2; exit 1
   fi
 
-  # 3. Credentials: a FRESH private directory on a VERIFIED tmpfs, chosen without consulting
-  #    TMPDIR at all, so no caller-supplied path can redirect the secret to persistent or
-  #    hostile storage. Because the directory is new and mode 700, nothing can be substituted
-  #    underneath the files after they are created.
+  # 3. Credentials: a FRESH private directory, PREFERRING a verified tmpfs. /dev/shm is used
+  #    only after it checks out as a writable, non-symlink directory that stat reports as
+  #    tmpfs, and TMPDIR is not consulted for that preferred path, so no caller-supplied
+  #    variable can redirect the secret to hostile storage. Only when no such tmpfs exists
+  #    does the parent fall back to ${TMPDIR:-/tmp}, and that branch WARNS that the secret
+  #    may reach persistent storage and that unlinking is not erasure. Because the directory
+  #    is new and mode 700, nothing can be substituted underneath the files once created.
   CRED_PARENT=
   CRED_PERSISTENT=no
   if [ -d /dev/shm ] && [ ! -L /dev/shm ] && [ -w /dev/shm ] \
@@ -1211,8 +1226,11 @@ cannot do so says so out loud.
     "$DB_PASS" "$DB_HOST" "$DB_PORT" > "$MYSQL_CNF"
 
   # 4. A FRESH, per-run, private evidence directory. Plain `mkdir` - no -p - so a stale
-  #    directory from an earlier run cannot contaminate this one, and ALL scratch lives
-  #    inside it rather than in fixed working-tree paths.
+  #    directory from an earlier run cannot contaminate this one, and every retained artifact
+  #    and every working-tree scratch file lives inside it rather than in fixed working-tree
+  #    paths. Two pieces of state stay outside it by design: the credential directory from
+  #    step 3, which belongs on tmpfs and is removed by cleanup, and the stable lock from
+  #    step 2, which several runs must be able to find.
   EVIDENCE="./v3-evidence-$RUN_ID"
   if [ -e "$EVIDENCE" ]; then
     printf 'FATAL: %s already exists; refusing to reuse an evidence directory\n' "$EVIDENCE" >&2
@@ -1982,9 +2000,8 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
   #     a worktree-only `git diff` / `git status` reports nothing at a clean HEAD and
   #     therefore cannot verify a committed change at all.
   #     The pathspec must name EVERY frozen artifact, including the seed database dump
-  #     initial_test_db.sql - which lives at the REPOSITORY ROOT, not under api/, and was
-  #     missing from an earlier revision of this gate. A frozen artifact absent from the
-  #     pathspec is simply not gated.
+  #     initial_test_db.sql - which lives at the REPOSITORY ROOT, not under api/. A frozen
+  #     artifact absent from the pathspec is simply not gated.
   BASE=3934d8086c684269e935562f25e806be91947115
   FROZEN=(
     'api/src/main/resources/liquibase-*.xml'
@@ -2008,9 +2025,9 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
   #     rather than an external stopwatch, and treat it as a sanity check, not a
   #     benchmark: neither the pre- nor the post-change run controlled for CPU
   #     contention or repository warmth, so a minutes-vs-minutes comparison is all
-  #     that is supportable. The logs must be RETAINED for the grep to have anything to
-  #     read - an earlier revision of this gate quoted timings while naming two files the
-  #     run had not kept, which is a figure a reader cannot check.
+  #     that is supportable. Both logs must be RETAINED for the grep to have anything to
+  #     read: a timing quoted from a log the run did not keep is a figure no reader can
+  #     check.
   ./mvnw clean install -DskipTests -B > install.log 2>&1; echo "install exit=$?"
   ./mvnw test -B                     > test.log    2>&1; echo "test exit=$?"
   grep -E '^\[INFO\] Total time' install.log test.log
@@ -2018,7 +2035,7 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
   #     Maven prints no reactor-WIDE test total, so sum the five per-module `Results:` blocks.
   #     Do not tail the last one: `grep ... | tail -1` returns the final module's own total,
   #     which is openmrs-test-suite-module-omod's single test - it looks like a passing check
-  #     while saying nothing about 5,106. Running this gate is what caught that.
+  #     while saying nothing about 5,106.
   grep -E '^\[INFO\] Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$' test.log \
     | awk -F'[:,]' '{r+=$2;f+=$4;e+=$6;s+=$8;n++} \
         END{printf "blocks=%d run=%d failures=%d errors=%d skipped=%d\n",n,r,f,e,s}'
@@ -2038,7 +2055,7 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
 
   # A10 this document exists AND is complete. `test -f` is a PRESENCE check, not a
   #     completeness check - it passes on a zero-byte file - so assert the structure and
-  #     the mandated sections instead. An earlier revision of this gate stopped at `test -f`.
+  #     the mandated sections instead.
   DOC=doc/JAKARTA_MIGRATION_BASELINE.md
   if [ ! -f "$DOC" ]; then echo "FAIL: $DOC is missing" >&2; exit 1; fi
   if [ "$(grep -c '^# ' "$DOC")" -ne 1 ]; then echo 'FAIL: not exactly one H1' >&2; exit 1; fi
