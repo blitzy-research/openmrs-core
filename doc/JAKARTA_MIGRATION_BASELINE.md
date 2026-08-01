@@ -87,12 +87,41 @@ raised.
 `3934d8086c684269e935562f25e806be91947115`** — the Agent Action Plan's base commit and the parent of the
 first change in this work. Every `"$BASE"` in every command block in this document is that hash.
 
-One disclosure is owed here rather than left implicit. A review pass over this change nominated
-`2cbf9d7f8762451bdf253455c6e988eef732b843` as its comparison baseline, and **that object does not resolve
-in this repository** (`git cat-file -t` fails on it). It is therefore not used anywhere in this document,
-and no figure here is derived from it. `3934d8086` is the only baseline that both exists and is
-defensible, so it is the only one cited. Where a count in the Agent Action Plan disagrees with a count
-measured at `3934d8086`, the measured value is used and the discrepancy is stated at the point of use.
+**Correction.** An earlier revision of this section said that
+`2cbf9d7f8762451bdf253455c6e988eef732b843` — the baseline a review pass over this change nominated —
+"does not resolve in this repository". **That statement was false and is withdrawn.** The object resolves,
+and it is not an obscure one:
+
+```text
+  git cat-file -t 2cbf9d7f8762451bdf253455c6e988eef732b843   ->  commit
+  git log -1 --format='%s %ci' 2cbf9d7f8
+      Restore the frozen test corpus to the migration baseline   2026-08-01 03:48:52 +0000
+  git rev-parse 9124e3dab^                                   ->  2cbf9d7f8762451bdf253455c6e988eef732b843
+```
+
+It is the **direct parent of `9124e3dab`**, the commit that created this document — the seventh of the nine
+commits on top of the base commit. No figure in this document was ever derived from a failed lookup; the
+erroneous sentence was a wrong claim about Git history, not a corrupted measurement.
+
+**Which baseline supports which measurement.** The two candidate baselines are not interchangeable, and the
+difference between them is exactly one file:
+
+| Baseline | What it is | What it supports |
+|---|---|---|
+| `3934d8086c684269e935562f25e806be91947115` | the Agent Action Plan's base commit ("chore: add TechDocs scaffold (#1)", 2026-05-15), parent of the first change in this work | **every "pre-change" column and every `"$BASE"` in every command block in this document**, including the section (e) `git archive` extraction of the pre-change changelog bytes |
+| `2cbf9d7f8762451bdf253455c6e988eef732b843` | the tree with **all** code and configuration changes already applied and this evidence document not yet written | the review pass that nominated it; **no measurement in this document is taken against it** |
+
+That second row carries a consequence worth stating, because it makes the choice of baseline immaterial for
+every code claim: `git diff --name-status 2cbf9d7f8..HEAD` reports exactly **one** path,
+`A doc/JAKARTA_MIGRATION_BASELINE.md`, while `git diff --name-status 3934d8086..2cbf9d7f8` reports the
+other **18** — every POM, descriptor, Java and `NOTICE.md` edit in this work. So **all 18 code and
+configuration changes are already present at `2cbf9d7f8`**, and any build, test, dependency-tree or schema
+measurement taken there is identical to one taken at HEAD. A review comparing against `2cbf9d7f8` and this
+document comparing against `3934d8086` therefore see the same code; only the "pre" side differs, and only
+`3934d8086` gives a genuine pre-change "pre" side.
+
+Where a count in the Agent Action Plan disagrees with a count measured at `3934d8086`, the measured value
+is used and the discrepancy is stated at the point of use.
 
 ## Section (a): Test Baseline and Post-Change Re-Capture
 
@@ -116,26 +145,105 @@ it, and the total was summed arithmetically rather than transcribed.
 
 ### 1. Build Measurements
 
-| Measurement | Pre-change (planning capture) | Post-change (measured here) |
-|---|---|---|
-| `clean install -DskipTests` | `BUILD SUCCESS`, 2 min 16 s, 13 of 13 reactor projects | `BUILD SUCCESS`, **1 min 21 s**, **13 of 13** reactor projects, exit code **0** |
-| `test` | `BUILD SUCCESS`, 10 min 17 s | `BUILD SUCCESS`, **10 min 07 s**, exit code **0** |
-| `dependency:tree` | — | `BUILD SUCCESS`, **1,620 lines**, exit code **0** |
-| `spotless:check -Dspotless.check.skip=false` | — | `BUILD SUCCESS`, **0 violations**, exit code **0** |
+Every figure below comes from **one identifiable capture**, described in full so it can be checked rather
+than taken on trust. An earlier revision of this section reported an `install` of 1:21 and a `test` of
+10:07 without saying which run produced them; those figures are replaced here by a single, fully attributed
+set.
 
-> **Note:** the post-change `install` wall clock is *faster* than the pre-change figure (1:21 against
-> 2:16), and `test` is marginally faster (10:07 against 10:17). Neither is a speed claim: the difference
-> is environmental — the local Maven repository was already fully warmed, so nothing was downloaded, and
-> wall clock on a shared host is not a controlled benchmark. Both are reported as measured rather than
-> normalised to the earlier numbers, and both satisfy the "no material build-time regression" gate in the
-> reproduction section.
+**The capture.** Commit `d27df94de010d8e3e43bac20e31ab3f7213495ea` (the tip of this work) with this
+document's own in-flight edits in the working tree — no source, POM or test file differs from that commit.
+Run on **2026-08-01** on **JDK 21.0.11** (`OpenJDK Runtime Environment build 21.0.11+10-1-25.10.2-Ubuntu`)
+with **Apache Maven 3.9.9** via the repository's own `./mvnw`, against a **fully warmed** local repository,
+with `CI` **unset** so Spotless runs in `apply` mode exactly as a developer's build does. Four commands,
+run in this order, each captured to its own log:
+
+| # | Command | Result | Maven `Total time` | Exit |
+|---|---|---|---|---|
+| 1 | `./mvnw -B clean install -DskipTests` | `BUILD SUCCESS`, **13 of 13** reactor projects `SUCCESS` | **01:21 min** | **0** |
+| 2 | `./mvnw -B test` | `BUILD SUCCESS`, **5,106 run / 0 failures / 0 errors / 45 skipped**, 13 of 13 `SUCCESS` | **09:53 min** | **0** |
+| 3 | `./mvnw -B dependency:tree` | `BUILD SUCCESS`, **1,620 lines**, **zero** `javax.` occurrences of any kind | **2.405 s** | **0** |
+| 4 | `./mvnw -B spotless:check -Dspotless.check.skip=false` | `BUILD SUCCESS`, **0 violations** | **2.024 s** | **0** |
+
+Command 2 is the run behind the **post-change** columns of the per-module test table at the head of this
+section. Its wall clock is dominated by two modules: `openmrs-api` **07:59 min** and `openmrs-web`
+**01:24 min**, with the remaining eleven reactor projects totalling under 30 seconds between them.
+
+> **On comparing wall clocks — this document does not.** The pre-change figures (`install` 2:16, `test`
+> 10:17) were taken during planning on a different day, and the post-change figures above were taken on a
+> warmed repository on a **shared** host. Neither run was a controlled benchmark: nothing pinned CPU
+> contention, and the pre-change run had downloads the post-change run did not. So the earlier claim that
+> the `install` phase is "measurably faster" is **withdrawn** — the numbers are not comparable at that
+> resolution, and a wall-clock difference between two uncontrolled runs is not evidence of anything. What
+> *is* claimed is the only thing the evidence supports: both phases completed, both exited **0**, and
+> neither shows a change of *order* (minutes stayed minutes; nothing went from one minute to ten).
 >
-> The per-module totals in the table above were cross-checked two independent ways: by parsing each
-> `Results:` block against the `Building <module>` line preceding it, and by aggregating the **335**
-> Surefire XML reports the run wrote (`tests=5106 failures=0 errors=0 skipped=45`). Both agree, and the
-> log contains **zero** `[ERROR]` lines and **zero** `BUILD FAILURE` lines.
+> **`[ERROR]` lines differ by phase, and the distinction matters.** Command 2 (`test`) contains **zero**
+> `[ERROR]` lines and **zero** `BUILD FAILURE` lines. Command 1 (`install`) contains **309** `[ERROR]`
+> lines and still exits 0 — every one of them is a **SpotBugs finding** (**284** `Medium`, **25** `High`),
+> emitted because `install` reaches the `verify` phase where `spotbugs:check` is bound. They are
+> non-failing by explicit configuration: the root `pom.xml` sets `<failOnError>false</failOnError>` on
+> `spotbugs-maven-plugin`, carrying the standing comment
+> *"TODO Set to true once existing findings are resolved"*. The count is **unchanged from the pre-existing
+> baseline of 309** recorded on the pristine base commit during environment setup, which is the regression
+> check that matters here: **this work introduced no new SpotBugs finding.** That is expected rather than
+> lucky — every Java edit in this change is javadoc or comment text, which SpotBugs does not analyse.
+>
+> The per-module test totals were cross-checked two independent ways: by parsing each `Results:` block in
+> command 2's log against the `Building <module>` line preceding it, and by aggregating the **335** Surefire
+> XML reports that run wrote (`tests=5106 failures=0 errors=0 skipped=45`). Both agree exactly, and the
+> `spotbugs:check` binding responsible for command 1's `[ERROR]` lines is at `phase=verify`, which command 2
+> never reaches — which is why the two logs differ.
 
-### 2. Invariants That Held
+### 2. Which Maven Plugins Were Actually Exercised
+
+An earlier revision of this document claimed that **all 23** managed Maven plugins "executed successfully
+on JDK 21 across both a full `install` and a full `test` run". **That was false and is withdrawn.** The
+inventory below was extracted from the four retained logs by matching Maven's goal-execution lines
+(`[INFO] --- <prefix>:<version>:<goal> (<id>) @ <module> ---`) and counting invocations.
+
+**Exercised: 14 of the 23.**
+
+| Managed plugin | Version | Goals executed (invocations) |
+|---|---|---|
+| `spotless-maven-plugin` | 3.4.0 | `apply` (24), `check` (25) |
+| `maven-enforcer-plugin` | 3.6.2 | `enforce` (24) |
+| `buildnumber-maven-plugin` | 3.3.0 | `create` (24) |
+| `build-helper-maven-plugin` | 3.6.1 | `parse-version` (24) |
+| `maven-resources-plugin` | 3.5.0 | `resources` (16), `testResources` (16) |
+| `maven-compiler-plugin` | 3.15.0 | `compile` (16), `testCompile` (16) |
+| `maven-surefire-plugin` | 3.5.5 | `test` (16) |
+| `maven-jar-plugin` | 3.5.0 | `jar` (7), `test-jar` (12) |
+| `spotbugs-maven-plugin` | 4.9.8.3 | `spotbugs` (12), `check` (12) |
+| `license-maven-plugin` | 3.0 | `check` (12) |
+| `maven-dependency-plugin` | 3.10.0 | `tree` (12), `unpack-dependencies` (2) |
+| `jacoco-maven-plugin` | 0.8.14 | `prepare-agent` (4), `report` (4) |
+| `maven-war-plugin` | 3.5.1 | `war` (1) |
+| `maven-assembly-plugin` | 3.8.0 | `single` (1) |
+
+**Unvalidated: the other 9.** These are *not* claimed to have been validated on JDK 21 by this work. Each
+reason was read out of the POMs, not assumed:
+
+| Managed plugin | Version | Why it never ran |
+|---|---|---|
+| `maven-deploy-plugin` | 3.1.4 | the `deploy` phase was never invoked (the build stops at `install`), and the four `test-suite` POMs additionally set `<skip>true</skip>` |
+| `maven-source-plugin` | 3.3.1 | bound only inside the `release` profile, in `api`, `web` and `webapp` |
+| `maven-javadoc-plugin` | 3.12.0 | bound only inside the `release` profile, plus a `<reporting>` entry that runs only in the `site` lifecycle |
+| `maven-checkstyle-plugin` | 3.6.0 | declared in `pluginManagement` with configuration but **no `<executions>` anywhere**, so it has no lifecycle binding at all |
+| `maven-release-plugin` | 3.3.1 | `pluginManagement` only; release-time goals |
+| `maven-eclipse-plugin` | 2.10 | `pluginManagement` only; an IDE-descriptor goal invoked by hand |
+| `sonar-maven-plugin` | 5.6.0.6792 | reachable only through the `sonar` / `sonar-cloud` profiles, neither activated |
+| `lifecycle-mapping` | 1.0.0 | m2e IDE metadata; **never executed by the Maven CLI by design** |
+| `liquibase-maven-plugin` | 4.33.0 | declared in `liquibase/pom.xml` with **configuration only and no `<executions>`** — a manual snapshot-generation harness. Note that the executed section (e) comparison did **not** use it: it drove the `liquibase-core` **4.32.0** CLI off the `api` classpath, so the 4.33.0 plugin remains unexercised. This is register item 7 |
+
+Three plugins were also exercised that the root `pluginManagement` does **not** pin, so their versions come
+from Maven's own defaults or from a module: `maven-clean-plugin` 3.2.0 (`clean`, 13), `maven-install-plugin`
+3.1.2 (`install`, 13) and `maven-antrun-plugin` 3.2.0 (`run`, 2), alongside the OpenMRS module packaging
+plugin `openmrs:1.0.1` (`initialize-module`, `package-module`) in `openmrs-test-suite-module-omod`. One
+detail worth recording because it looks like a version skew and is not: `dependency:tree` ran as **3.10.0**
+in twelve modules and as Maven's default **3.7.0** in exactly one — `openmrs-bom`, which declares no
+`<parent>` and therefore inherits no `pluginManagement`.
+
+### 3. Invariants That Held
 
 - Surefire runs with **`testFailureIgnore=false`**, so a 100% pass rate is a hard gate — any failure
   fails the build.
@@ -145,21 +253,44 @@ it, and the total was summed arithmetically rather than transcribed.
 - **No assertion was weakened, no test was deleted, and no new `@Disabled` was added.** The only path
   under any `src/test/` tree that this change touches is `webapp/src/test/resources/override-web.xml`,
   a servlet-container **resource** descriptor, not a test. **Zero Java test files were modified.**
-- The **45 skips** trace to `@Disabled`, and the census was re-counted here rather than carried over,
-  because the figure recorded during planning ("42 annotations across 22 `api` test classes") does not
-  match the tree. The measured values, taken by scanning every tracked `.java` file and excluding
-  imports, javadoc and commented-out lines:
+- **The skip ceiling is 45, and it reconciles exactly — but not by "expansion".** These are two different
+  measurements and this document keeps them apart, because an earlier revision said 41 source annotations
+  "expand" to 45 skipped methods, which is not what happens:
+
+  **Measurement 1 — the source `@Disabled` census.** Taken by scanning every tracked `.java` file and
+  excluding imports, javadoc and commented-out lines. (Recorded because the planning figure, "42
+  annotations across 22 `api` test classes", does not match the tree.)
 
   | Scope | `@Disabled` annotations | Files |
   |---|---|---|
   | under `api/` | **41** | **21** |
-  | `test-suite/performance` (`StartupPerformanceIT`, an IT that the default `test` phase never runs) | 2 | 1 |
+  | `test-suite/performance` (`StartupPerformanceIT`, an IT the default `test` phase never runs) | 2 | 1 |
   | **repository-wide** | **43** | **22** |
 
-  **6** of them are class-level — on `SerializedObjectDAOTest`, `Log4JCompatibilityTest`,
-  `ModuleTestSuite`, `CreateConceptDictionaryDataSet`, `CreateCoreUuids` and `CreateInitialDataSet` —
-  which is why 41 annotations expand to 45 skipped *methods*: a class-level `@Disabled` contributes one
-  skip per test method in the class.
+  **6** of the 41 are **class-level**: `SerializedObjectDAOTest`, `Log4JCompatibilityTest`,
+  `ModuleTestSuite`, `CreateConceptDictionaryDataSet`, `CreateCoreUuids` and `CreateInitialDataSet`.
+
+  **Measurement 2 — the Surefire-discovered skip count.** Parsed from the **335** retained
+  `TEST-*.xml` reports: **45 skipped**, all of them in `openmrs-api`.
+
+  **The reconciliation, exactly.** Only *four* terms contribute, and one of them is not an annotation at all:
+
+  | Contribution | Skips | Why |
+  |---|---|---|
+  | `SerializedObjectDAOTest` — class-level `@Disabled` | **10** | Surefire discovers it (name matches the default `*Test` pattern), so **one** annotation is reported as one skip per test method |
+  | `Log4JCompatibilityTest` — class-level `@Disabled` | **1** | discovered; the class holds a single test method |
+  | Method-level `@Disabled`, across 14 classes | **32** | `PersonNameValidatorTest` 8, `AdministrationServiceTest` 4, `OrderServiceTest` 3, `ConceptReferenceTermValidatorTest` 3, `ConceptDAOTest` 2, `EncounterServiceTest` 2, `UserServiceTest` 2, `HL7ServiceTest` 2, `PatientDAOTest` 1, `ProviderEditorTest` 1, `OpenmrsServiceTest` 1, `ObsBehaviorTest` 1, `VisitValidatorTest` 1, `ConceptServiceTest` 1 |
+  | `OpenmrsProfileExcludeFilterTest` — **not `@Disabled`** | **2** | JUnit **assumption aborts**: `shouldBeIgnoredIfOpenmrsVersionDoesNotMatch` calls `assumeOpenmrsPlatformVersion("1.6.*")` and `shouldBeIgnoredIfModuleDoesNotMatch` calls `assumeOpenmrsModules("metadatasharing:1.2")`. An aborted test is reported as skipped. The class carries **zero** `@Disabled` annotations |
+  | **TOTAL** | **45** | 10 + 1 + 32 + 2 |
+
+  **The four remaining class-level annotations contribute nothing**, because Surefire never discovers those
+  classes: `ModuleTestSuite`, `CreateConceptDictionaryDataSet`, `CreateCoreUuids` and `CreateInitialDataSet`
+  match none of the default `*Test` / `Test*` / `*Tests` / `*TestCase` include patterns. Of the 35
+  method-level annotations, **3** are in `ModuleUtilIT` — an `*IT` class the default `test` phase never
+  runs — leaving the 32 above. The arithmetic therefore closes as
+  **6 class-level + 35 method-level = 41 under `api/`**, of which **34** sit in classes Surefire actually
+  runs (2 class-level + 32 method-level) and those 34 produce **43** reported skips; the remaining **2**
+  skips are assumption aborts, not annotations. **43 + 2 = 45.**
 - The ceiling did not grow. The identical census was taken at the base commit and at the changed tree
   and both report **43 annotations in 22 files repository-wide, 41 in 21 files under `api/`**. Since the
   two are equal, no `@Disabled` was added.
@@ -170,7 +301,7 @@ it, and the total was summed arithmetically rather than transcribed.
   `--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED`, so the
   effective value carries both `--add-opens` flags and the `COMPAT` locale providers.
 
-### 3. What This Capture Also Serves As
+### 4. What This Capture Also Serves As
 
 The 5,106-test run **is** the service-output capture for read, validation and privilege behaviour. It
 executes against fixed DBUnit reference datasets, so no new harness was built — which is why **zero
@@ -251,9 +382,37 @@ the one javax artifact actually present, `javax.xml.bind:jaxb-api`, was **invisi
 check passed at the base commit while the leak was still there. Rule 3 speaks to the old generation
 **as a whole**, not to two of its packages.
 
-The exclusion is source-neutral because `api/pom.xml` already declares the Jakarta replacements —
-`jakarta.xml.bind:jakarta.xml.bind-api` and `org.glassfish.jaxb:jaxb-runtime`. No Java file lost a
-capability.
+**Why the exclusion is safe — bytecode, not substitution.** It is tempting to justify this by saying
+`api/pom.xml` already declares `jakarta.xml.bind:jakarta.xml.bind-api` and `org.glassfish.jaxb:jaxb-runtime`,
+so the Jakarta artifacts "replace" the removed one. **That reasoning is invalid** and is not relied on here:
+`jakarta.xml.bind.*` and `javax.xml.bind.*` are different package names, so a Jakarta jar is not a binary
+substitute for `javax.xml.bind` — any class still linking against the old package would fail with
+`NoClassDefFoundError`, not silently resolve.
+
+The real justification is that **nothing on the classpath links against `javax.xml.bind`**. Every `.class`
+entry in every jar of the `api` module's runtime classpath was decompressed and searched for the constant
+`javax/xml/bind`:
+
+| Scan | Result |
+|---|---|
+| `liquibase-core-4.32.0.jar` — the artifact that declared the dependency | **0 of its 1,344 classes** reference `javax/xml/bind` |
+| All **229** jars on the `api` runtime classpath | exactly **one** class in the entire graph references it |
+| That one class | `com.thoughtworks.xstream.core.util.Base64JAXBCodec`, referencing only `javax.xml.bind.DatatypeConverter` |
+
+And that single reference is unreachable on this runtime. Its only referrer is
+`com.thoughtworks.xstream.core.JVM`, whose static initialiser picks a Base64 codec by **reflection**: it
+calls `loadClassForName("…Base64JavaUtilCodec")` first and only falls back to `…Base64JAXBCodec` if that
+returns `null`. `Base64JavaUtilCodec` is present in the same jar and links against `java.util.Base64`, which
+has existed since Java 8 — so on Java 21 the JAXB codec is **never selected**, and the fallback probe is a
+`loadClassForName` that returns `null` rather than throwing when the class is absent. Two independent
+empirical confirmations: the **335**-report suite is green including `SimpleXStreamSerializerTest`
+(9 tests, the only in-repo XStream consumer), and the section (e) Liquibase run applied **1,028 changesets**
+with `jaxb-api` excluded from the classpath.
+
+The declared Jakarta artifacts are still necessary — just for a different reason than "replacement". The
+same bytecode scan shows the real consumer of the Jakarta API is **`hibernate-core-7.3.2.Final`, in 284
+classes**; OpenMRS's own source imports `jakarta.xml.bind` **zero** times, exactly as it imported
+`javax.xml.bind` zero times. So no Java file lost a capability, and none gained one.
 
 ### 5. A Documented False Positive
 
@@ -446,10 +605,60 @@ catches **`jakarta.persistence.NoResultException`** and returns `null`, reproduc
 `org.hibernate.NonUniqueResultException`. The javadoc documents that propagation deliberately, with
 `@throws NonUniqueResultException if more than one result is found`.
 
-**Why the observable failure mode is identical:** both exception types are **unchecked**, and both funnel
-through the OpenMRS-owned hierarchy — `DAOException extends APIException`, which `extends
-RuntimeException`. **No test asserts on the concrete type**, and the suite is 100% green. This is
-recorded as a Rule 6 deviation with preserved observable behaviour, **not** as a defect to repair.
+**Correction — the propagation is direct, and undecorated.** An earlier revision of this document claimed
+both exception types "funnel through the OpenMRS-owned hierarchy — `DAOException extends APIException`".
+That is **wrong, and it is withdrawn.** Re-measured, the actual mechanism is:
+
+- `getSingleResultOrNull` has exactly one `catch`, and it catches **only** `NoResultException`.
+  `NonUniqueResultException` is *imported solely so the `@throws` javadoc can name it* — it is never
+  caught and never wrapped.
+- The helper is called from **12 sites** in three DAOs — `HibernateHL7DAO` ×2, `HibernateConceptDAO` ×6,
+  `HibernateUserDAO` ×4 — and **not one of them** sits inside a `catch` of `PersistenceException`,
+  `HibernateException`, `RuntimeException` or `Exception`. (The single bare `catch (Exception e) {}` in
+  `HibernateUserDAO` guards a `LuhnIdentifierValidator` call at line 223, not the query at line 234.)
+- **No exception-translation infrastructure is registered anywhere.** A repository-wide
+  `git grep PersistenceExceptionTranslationPostProcessor` returns **zero** hits, so although **22** DAO
+  classes under `api/src/main/java/org/openmrs/api/db` carry `@Repository` — which would make them
+  *eligible* for translation — no translating proxy is ever created for them, and no
+  `DataAccessException` is ever produced. There is no Spring Boot on the classpath to auto-register one.
+- The two are **distinct classes**, so a `catch` that names one does not match the other. Measured with
+  `javap` on the artifacts actually on this classpath:
+  `jakarta.persistence.NonUniqueResultException extends jakarta.persistence.PersistenceException extends
+  java.lang.RuntimeException` (from `jakarta.persistence-api-3.2.0.jar`), and
+  `org.hibernate.NonUniqueResultException extends org.hibernate.HibernateException` — which in
+  `hibernate-core-7.3.2.Final.jar` itself `extends jakarta.persistence.PersistenceException`. So on the
+  **current** classpath the two share the `PersistenceException` supertype; only the leaf class differs.
+  Whether the Hibernate-5-era `org.hibernate.HibernateException` shared that supertype is **not asserted
+  here** — no Hibernate 5 artifact exists in this environment to measure, and the claim is not needed:
+  the leaf class differs either way, which is the whole of the deviation.
+
+So what actually reaches a service caller on a non-unique result is the **provider's own
+`jakarta.persistence.NonUniqueResultException`** — not a `DAOException`, not an `APIException`.
+
+**What is therefore claimed, and what is not.** The narrower claims below are what the evidence supports;
+the blanket "invisible at the service boundary" is not among them.
+
+| Claim | Status | Evidence |
+|---|---|---|
+| No `org.openmrs.api.*` **signature** changes | **Proven** | both the baseline and the current exception are **unchecked**, so neither needs declaring; the **590** `throws DAOException` declarations across 38 files in `api/src/main/java/org/openmrs/api/db` are untouched, and `DAOException extends APIException extends RuntimeException` |
+| The **null-on-empty** contract of `uniqueResult()` is reproduced exactly | **Proven** | the `NoResultException` → `null` catch, unchanged in this work |
+| The **outcome class** is the same — a non-unique result yields no value and raises an unchecked failure rather than silently returning one row | **Proven** | there is no code path that swallows it |
+| The existing corpus cannot observe the difference | **Proven, and narrow** | `git grep NonUniqueResultException` across `api/src/test`, `web/src/test` and `test-suite` returns **zero** hits, so no assertion in the 5,106-test corpus keys on the concrete type; this establishes only that the corpus is *silent* on it, not that the types are interchangeable |
+| The **concrete exception type** a caller can `catch` by name is identical to the Hibernate-5 baseline | **NOT claimed — this is the deviation** | the leaf class differs, as measured above; a downstream caller that catches `org.hibernate.NonUniqueResultException` specifically would no longer match, because what is raised is `jakarta.persistence.NonUniqueResultException` |
+
+That last row **is** the Rule 6 deviation: the *outcome* is preserved, the *mechanism and concrete type*
+are not, and the difference is recorded here rather than papered over. It is not a defect to repair —
+introducing a translation layer to restore the old type would be an unattributable architectural addition
+that Rule 1 forbids, and it would change 12 call paths in the frozen DAO layer that Rule 4 protects.
+
+**On adding a service-boundary test for this:** the review that produced this correction also suggested
+adding one before asserting observable equivalence. The equivalence claim has instead been **narrowed to
+what is already proven**, which removes the need for new evidence. Adding the test is separately
+**declined on AAP grounds, with citation**: the test corpus is frozen at exactly **5,106 run / 0 / 0 / 45**
+by AAP §0.2.2.2 ("no assertion weakened, no test deleted, no new `@Disabled`"), §0.8.9 and §0.10.3.2, and
+this document's own change inventory records **zero test files modified**. Expanding the corpus is
+precisely the deviation an earlier review flagged as critical. The deviation stands recorded, with its
+exact limits stated above.
 
 ### 3. Deviation: Baseline-Capture Provenance
 
@@ -479,8 +688,8 @@ Recorded so that Rule 1 is visible operating as a brake rather than as an excuse
 | Spring 7.0.8 | **declined** | exists, but no validation item requires it and it would force re-validation of the whole lock-step chain |
 | Hibernate ORM 7.3.12.Final | **declined** | same reason |
 | Hibernate Validator 9.1.3.Final | **declined** | same reason |
-| `com.fasterxml.jackson.core:jackson-annotations` `2.21` | **kept as pinned** | the missing patch component is **deliberate and correct, not a skew**: `2.21.2` returns HTTP 404 on Maven Central while `2.21` returns HTTP 200. The BOM carries an inline comment recording this |
-| All 23 managed Maven plugins | **unchanged** | every one executed successfully on JDK 21 across both a full `install` and a full `test` run, so no plugin bump is attributable |
+| `com.fasterxml.jackson.core:jackson-annotations` `2.21` | **kept as pinned** | the missing patch component is **deliberate and correct, not a skew**. The registry check is *this document's* evidence, not the BOM's — re-verified directly against Maven Central: `.../jackson-annotations/2.21/jackson-annotations-2.21.pom` returns **HTTP 200** and `.../2.21.2/jackson-annotations-2.21.2.pom` returns **HTTP 404**, and the local repository correspondingly holds only `2.21`. (The `2.21.2` pinned by `jacksonVersion` at `bom/pom.xml:59` applies to `jackson-core`, `jackson-databind`, `jackson-datatype-jsr310` and `jackson-datatype-hibernate7`, all of which do publish that patch — `jackson-annotations` is the single artifact that opts out, with its own literal version.) The BOM records only that the omission is intentional — its inline comment at `bom/pom.xml:333` reads, in full, `<!-- No patch version -->`; it does **not** carry the 404/200 rationale, and it was not edited to add it, because a comment expanding on registry availability has no Spring/Hibernate/Jakarta/Java-21 attribution and Rule 1 excludes it |
+| All 23 managed Maven plugins | **unchanged** | no plugin bump is attributable to the target stack. **14 of the 23 were exercised on JDK 21** and passed; the other **9 never run in the executed lifecycles** and are therefore recorded as *unvalidated*, not as validated. The per-plugin inventory is in section (a).2 — an earlier revision of this document claimed all 23 executed, which was false |
 
 ### 6. Research Method
 
@@ -509,40 +718,74 @@ planning phase expected to be unable to run it, and why that limitation no longe
 The "pre-change" side is genuine without touching the working tree: the base commit's changelog bytes were
 materialised with `git archive 3934d8086`, and each of the **38** extracted files was verified against its
 working-tree counterpart with `cmp` — **38 identical, 0 differing**. Both sides were then installed into
-their own **disposable, clone-scoped** database by the same Liquibase **4.32.0** engine, driving
-`liquibase-schema-only.xml`, and each was dumped with `mysqldump --no-data --skip-comments`.
+their own **disposable, clone-scoped** database by the **same** Liquibase engine — `liquibase-core`
+**4.32.0** (`version 4.32.0 #8159 built at 2025-05-19`), resolved from the `api` module's own classpath so
+that engine parity between the two sides is guaranteed by construction — driving
+`liquibase-schema-only.xml` with the platform's own bookkeeping table names
+(`--databaseChangelogTableName=liquibasechangelog`,
+`--databaseChangelogLockTableName=liquibasechangeloglock`, matching
+`DatabaseUpdater.setDatabaseChangeLogTableName`). Each database was then dumped with
+`mysqldump --no-data --skip-comments --skip-dump-date`.
+
+The measurements below are the ones this run produced. Every one is reproducible with the script in
+(e).4, and every raw artifact it names was retained by the run that produced them.
 
 | Measurement | Before side (base-commit changelog bytes) | After side (current changelog bytes) |
 |---|---|---|
-| Tables | **119** | **119** |
+| Changesets executed (Liquibase log) | **1,028** | **1,028** |
+| Rows in `liquibasechangelog` | **1,028** | **1,028** |
+| Base tables | **119** | **119** |
 | Columns | **1,510** | **1,510** |
-| Indexes | **697** | **697** |
+| Distinct indexes | **697** | **697** |
 | Foreign keys | **446** | **446** |
-| Applied changesets | **1,028** | **1,028** |
 | `CREATE TABLE` statements in the dump | **119** | **119** |
-| Dump size | **3,389 lines / 175,152 bytes** | **3,389 lines / 175,152 bytes** |
-| MD5 of the dump | `e63817993751bc129d7a5843f3e41af1` | `e63817993751bc129d7a5843f3e41af1` |
+| Dump size | **3,389 lines / 175,156 bytes** | **3,389 lines / 175,156 bytes** |
+| MD5 of the dump | `659f521033a44a4b95e57fe0bbe105a9` | `659f521033a44a4b95e57fe0bbe105a9` |
 
-**`diff` exited 0 with zero differing lines.** The only normalisation applied was the database *name*,
-which is necessarily different between two disposable databases; no DDL text was touched.
+**`diff` exited 0 with zero differing lines**, and `cmp` reports the two dumps **byte-identical**.
 
-Two safety statements, because this ran against a shared server: only the two databases created for this
-comparison were dropped afterwards, and the shared `openmrs` database was re-verified after cleanup at
-**126 tables / 1,065 changesets** — identical to its pre-existing state. A neighbouring clone's database
-was left untouched.
+One precision that matters, because the obvious worry about comparing two differently-named databases is
+that a normalisation step could hide a real difference: **no normalisation was needed.** A single-database
+`mysqldump --no-data --skip-comments --skip-dump-date` emits no `CREATE DATABASE` and no `USE` statement,
+so the database name never appears in the output — verified as `grep -c "$DB_BEFORE" schema-before.sql`
+→ **0**. The script still performs the name-normalisation substitution before diffing, but it is provably a
+**no-op** here: the *raw*, un-normalised dumps already carry the identical MD5 above. Nothing in the DDL
+text was rewritten, filtered or sorted.
+
+Three safety statements, because this ran against a shared server:
+
+- Only the two databases created for this comparison were ever written to. Their names are clone-scoped —
+  `openmrs_v3_{before,after}_<suffix>`, where the suffix is the first eight hex digits of the MD5 of the
+  checkout's absolute path, so two clones at the *same* commit still get distinct names; the recorded run
+  used `openmrs_v3_before_f079886d` and `openmrs_v3_after_f079886d`. The script refuses to start if either
+  composed name equals the shared database, and both are dropped by the cleanup trap.
+- The shared `openmrs` database was measured **before** the run and **after** cleanup and was identical
+  both times — **126 tables / 1,065 changesets** — with the comparison asserted by `cmp` inside the script
+  rather than eyeballed. A neighbouring clone's database (`openmrs_c002`) was never referenced.
+- Cleanup runs from a `trap … EXIT INT TERM`, so an interrupt or an early failure still drops both
+  disposable databases and removes the credentials file.
 
 Section (e).5 below sets out, independently of this measurement, the four structural reasons the diff
 **had** to be empty. The measurement and the reasoning agree.
 
-### 2. The Harness Already Exists
+### 2. The In-Repo Harness, and Why It Was Not Used Verbatim
 
-No further design work is needed by whoever runs it. The `liquibase-maven-plugin` configuration in
-`liquibase/pom.xml` already supplies:
+A second harness exists in the repository, and it is worth being exact about its limits rather than
+recommending it unqualified. The `liquibase-maven-plugin` configuration in `liquibase/pom.xml` supplies:
 
 - `<driver>com.mysql.cj.jdbc.Driver</driver>`
-- `<url>jdbc:mysql://127.0.0.1:3306/openmrs</url>`
+- **`<url>jdbc:mysql://127.0.0.1:3306/openmrs</url>` — the SHARED database**
 - `<changeLogFile>snapshots/${changelogfile}</changeLogFile>`
 - `<diffTypes>${diffTypes}</diffTypes>` and `<outputChangeLogFile>snapshots/${outputChangelogfile}</outputChangeLogFile>`
+
+That `<url>` is a hard-coded, unparameterised pointer at `openmrs`. Anyone invoking that plugin
+configuration for a schema comparison **must override the URL to a disposable database** — otherwise the
+run writes into whatever `openmrs` happens to be on the host, which on a shared or clinical host is
+exactly the outcome to avoid. That single fact is why the executed comparison in (e).1 did **not** use the
+plugin: it drove `liquibase-core` **4.32.0** directly off the `api` module's classpath with an explicit
+`--url` per side, which (a) makes the target database impossible to inherit by accident, and (b) pins both
+sides to the same engine version as the library the platform actually ships, rather than to the
+plugin's **4.32.0-versus-4.33.0** skew recorded as register item 7.
 
 The same module also builds a `maven-assembly-plugin` **`jar-with-dependencies`** assembly with main
 class `org.openmrs.liquibase.Main`.
@@ -558,44 +801,153 @@ was verified.
 
 ### 4. The Procedure
 
-> **Destructive-command warning.** Steps 2 and 4 drop and recreate a database. Point them **only** at a
-> disposable, clone-scoped database or a throwaway container — never at the shared `openmrs` database and
-> never at anything holding real data.
+> **Destructive-command warning.** This procedure creates, drops and recreates databases. Every
+> `DROP`/`CREATE` below is directed at a **name the script itself composes** from a clone-scoped suffix, and
+> the script **refuses to start** if either name equals the shared database. Never substitute `openmrs`, and
+> never point it at anything holding real data. The shared database is read **only** for the
+> before/after assertion in steps 1 and 8.
+
+This is the script that produced the measurements in (e).1 — not an outline of one. Four properties make
+it safe to publish and safe to re-run:
+
+- **Fail-fast with preserved status.** `set -euo pipefail`, and every step that can fail is wrapped in an
+  `if ! …; then` guard that reports and exits non-zero. `diff`'s status is captured into `DIFF_STATUS`
+  (with `set +e` around it, because a *non-zero* `diff` status is the failure signal, not a shell error)
+  and the run's final verdict is derived from that captured value. **No later step can mask an earlier
+  failure**, and cleanup cannot overwrite the verdict.
+- **Isolation.** Both sides live in disposable, clone-scoped databases created by the script. The shared
+  database is only ever read, and the pre/post readings are compared with `cmp` so drift fails the run.
+- **Trap-based cleanup.** `trap cleanup EXIT INT TERM` drops both disposable databases and removes the
+  credentials file even on interrupt or early exit, and it re-raises the original exit status.
+- **Evidence retention.** Both raw dumps, the normalised dumps, the `diff` output, the MD5 list, the
+  per-side metrics and both Liquibase logs are written under an evidence directory *before* any cleanup,
+  so the artifacts behind every figure in (e).1 outlive the run.
 
 Credentials go in a `--defaults-extra-file`, not on the command line. The `-u <user> -p<pw>` form that
 looks natural in prose is **not executable**: the shell reads `<user>` and `>` as input/output
-redirection, so the command fails before `mysqldump` ever starts.
+redirection, so the command fails before `mysqldump` ever starts. The file is created `chmod 600` and
+deleted with `rm -f` — that is **removal, not secure erasure**; if a shredding guarantee is required on
+the host in question, substitute `shred -u` (or keep the file on a `tmpfs`).
 
 ```bash
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  BASE_COMMIT=3934d8086c684269e935562f25e806be91947115
+  SUFFIX="$(printf '%s' "$PWD" | md5sum | cut -c1-8)"   # per-checkout; keeps parallel clones apart
+  DB_BEFORE="openmrs_v3_before_$SUFFIX"       # disposable
+  DB_AFTER="openmrs_v3_after_$SUFFIX"         # disposable
+  SHARED_DB=openmrs                           # READ-ONLY here. Never a DROP/CREATE target.
+  DB_HOST=127.0.0.1; DB_PORT=3306
+  EVIDENCE=./v3-evidence; mkdir -p "$EVIDENCE"
+
   # 0. Credentials once, in a private file. Never inline them, never use -p<pw>.
   MYSQL_CNF="$(mktemp)"; chmod 600 "$MYSQL_CNF"
-  printf '[client]\nuser=openmrs\npassword=openmrs\nhost=127.0.0.1\n' > "$MYSQL_CNF"
+  printf '[client]\nuser=root\npassword=%s\nhost=%s\nport=%s\n' "$DB_PASS" "$DB_HOST" "$DB_PORT" > "$MYSQL_CNF"
 
-  # 1. Capture the baseline schema BEFORE the change, from a clean, DISPOSABLE database
-  #    that has been brought up by the UNMODIFIED changelogs.
-  DB_NAME=openmrs_schema_before          # disposable - NOT the shared openmrs database
-  mysqldump --defaults-extra-file="$MYSQL_CNF" \
-    --no-data --skip-comments "$DB_NAME" > baseline-schema.sql
+  # Cleanup ALWAYS runs and NEVER changes the verdict: it preserves $? and re-exits with it.
+  cleanup() {
+    status=$?; set +e
+    mysql --defaults-extra-file="$MYSQL_CNF" \
+      -e "DROP DATABASE IF EXISTS \`$DB_BEFORE\`; DROP DATABASE IF EXISTS \`$DB_AFTER\`;" \
+      >> "$EVIDENCE/cleanup.log" 2>&1
+    rm -f "$MYSQL_CNF"          # removal, not secure erasure - see the note above
+    exit "$status"
+  }
+  trap cleanup EXIT INT TERM
 
-  # 2. Recreate a second disposable database and apply the changelogs AFTER the change,
-  #    using the existing plugin configuration in liquibase/pom.xml
-  #    (driver com.mysql.cj.jdbc.Driver, url jdbc:mysql://127.0.0.1:3306/<disposable db>).
-  DB_NAME_AFTER=openmrs_schema_after
-  mysql --defaults-extra-file="$MYSQL_CNF" \
-    -e "DROP DATABASE IF EXISTS \`$DB_NAME_AFTER\`; CREATE DATABASE \`$DB_NAME_AFTER\`;"
+  # Guard: never operate on the shared database.
+  for d in "$DB_BEFORE" "$DB_AFTER"; do
+    [ "$d" = "$SHARED_DB" ] && { echo "FATAL: disposable name equals shared database" >&2; exit 1; }
+  done
 
-  # 3. Capture the post-change schema exactly the same way.
-  mysqldump --defaults-extra-file="$MYSQL_CNF" \
-    --no-data --skip-comments "$DB_NAME_AFTER" > postchange-schema.sql
+  # 1. Shared database pre-state - READ ONLY. Re-checked identical in step 8.
+  mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
+    "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$SHARED_DB'), \
+            (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" > "$EVIDENCE/shared-db-before.txt"
 
-  # 4. Compare. Expected: EMPTY (diff exits 0).
-  diff baseline-schema.sql postchange-schema.sql
+  # 2. Materialise the BASE-COMMIT changelog bytes without touching the working tree,
+  #    and prove byte-for-byte equality with the current tree.
+  mkdir -p base-changelogs
+  git archive "$BASE_COMMIT" -- 'api/src/main/resources/liquibase-*.xml' \
+                                'api/src/main/resources/org/openmrs/liquibase' | tar -x -C base-changelogs
+  BASE_ROOT=base-changelogs/api/src/main/resources
+  diffcount=0
+  while IFS= read -r f; do
+    rel="${f#"$BASE_ROOT"/}"
+    cmp -s "$f" "api/src/main/resources/$rel" || { echo "DIFFERS: $rel"; diffcount=$((diffcount+1)); }
+  done < <(find "$BASE_ROOT" -name 'liquibase-*.xml' | sort)
+  [ "$diffcount" -eq 0 ] || { echo "FATAL: changelog bytes are not frozen" >&2; exit 1; }
 
-  # 5. Clean up: drop both disposable databases and shred the credentials file.
-  mysql --defaults-extra-file="$MYSQL_CNF" \
-    -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; DROP DATABASE IF EXISTS \`$DB_NAME_AFTER\`;"
-  rm -f "$MYSQL_CNF"
+  # 3. Resolve the SAME engine for both sides: liquibase-core 4.32.0 off the api classpath.
+  #    mdep.outputFile MUST be absolute: with -pl it is otherwise resolved against the
+  #    module basedir and lands in api/, not here.
+  CP_FILE="$PWD/api_cp.txt"
+  ./mvnw -B -q -o -pl api dependency:build-classpath \
+    -Dmdep.outputFile="$CP_FILE" -Dmdep.includeScope=runtime
+  grep -q 'liquibase-core/4\.32\.0/' "$CP_FILE" || { echo "FATAL: wrong engine" >&2; exit 1; }
+  CP="$(cat "$CP_FILE")"
+
+  # 4-6. Install and dump each side. $1 = database, $2 = changelog resource root, $3 = label.
+  run_side() {
+    local db="$1" root="$2" label="$3"
+    if ! mysql --defaults-extra-file="$MYSQL_CNF" -e \
+      "DROP DATABASE IF EXISTS \`$db\`; CREATE DATABASE \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+    then echo "FATAL: could not create $db" >&2; exit 1; fi
+
+    # Explicit disposable URL - the liquibase/pom.xml <url> points at the SHARED database
+    # and must never be used unoverridden. The changelog table names match DatabaseUpdater.
+    if ! java -cp "$root:$CP" liquibase.integration.commandline.Main \
+        --logLevel=warning --driver=com.mysql.cj.jdbc.Driver \
+        --url="jdbc:mysql://$DB_HOST:$DB_PORT/$db" --username=root --password="$DB_PASS" \
+        --databaseChangelogTableName=liquibasechangelog \
+        --databaseChangelogLockTableName=liquibasechangeloglock \
+        --changeLogFile=liquibase-schema-only.xml update > "$EVIDENCE/liquibase-update-$label.log" 2>&1
+    then echo "FATAL: liquibase update failed for $label" >&2; exit 1; fi
+
+    mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e "
+      SELECT 'tables',      COUNT(*) FROM information_schema.tables  WHERE table_schema='$db' AND table_type='BASE TABLE'
+      UNION ALL SELECT 'columns',    COUNT(*) FROM information_schema.columns WHERE table_schema='$db'
+      UNION ALL SELECT 'indexes',    COUNT(DISTINCT CONCAT(table_name,'.',index_name)) FROM information_schema.statistics WHERE table_schema='$db'
+      UNION ALL SELECT 'fkeys',      COUNT(*) FROM information_schema.table_constraints WHERE table_schema='$db' AND constraint_type='FOREIGN KEY'
+      UNION ALL SELECT 'changesets', COUNT(*) FROM \`$db\`.liquibasechangelog;" > "$EVIDENCE/metrics-$label.txt"
+
+    if ! mysqldump --defaults-extra-file="$MYSQL_CNF" --no-data --skip-comments --skip-dump-date \
+        "$db" > "$EVIDENCE/schema-$label.sql"
+    then echo "FATAL: mysqldump failed for $db" >&2; exit 1; fi
+  }
+  run_side "$DB_BEFORE" "$BASE_ROOT"              before
+  run_side "$DB_AFTER"  api/src/main/resources    after
+
+  # 7. Compare. The name substitution is a documented NO-OP for a single-database dump
+  #    (no CREATE DATABASE / USE is emitted); it is kept only so the step is explicit.
+  sed "s/\`$DB_BEFORE\`/\`DBNAME\`/g" "$EVIDENCE/schema-before.sql" > "$EVIDENCE/schema-before.norm.sql"
+  sed "s/\`$DB_AFTER\`/\`DBNAME\`/g"  "$EVIDENCE/schema-after.sql"  > "$EVIDENCE/schema-after.norm.sql"
+  set +e
+  diff "$EVIDENCE/schema-before.norm.sql" "$EVIDENCE/schema-after.norm.sql" > "$EVIDENCE/schema.diff"
+  DIFF_STATUS=$?          # captured, asserted in step 9 - never discarded
+  set -e
+  md5sum "$EVIDENCE"/schema-*.sql > "$EVIDENCE/checksums.txt"
+
+  # 8. Shared database post-state must equal the pre-state. Asserted, not eyeballed.
+  mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
+    "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$SHARED_DB'), \
+            (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" > "$EVIDENCE/shared-db-after.txt"
+  cmp -s "$EVIDENCE/shared-db-before.txt" "$EVIDENCE/shared-db-after.txt" \
+    || { echo "FATAL: the shared database changed" >&2; exit 1; }
+
+  # 9. Verdict from the CAPTURED status. Expected: 0, with an empty schema.diff.
+  [ "$DIFF_STATUS" -eq 0 ] || { echo "FAIL: schemas differ - see $EVIDENCE/schema.diff" >&2; exit 1; }
+  echo "PASS: schemas identical"
 ```
+
+`$DB_PASS` is supplied by the operator from the environment (the containerised development server in
+`docker-compose.yml` uses the project's default), so no credential is written into this document.
+
+The run leaves three byproducts in the working tree — `api_cp.txt`, `base-changelogs/` and the
+`v3-evidence/` directory. The first two are scratch; the third is the retained evidence the figures in
+(e).1 come from. None of them belongs in a commit, so delete them (or add them to a local exclude) once
+the evidence has been read.
 
 ### 5. Why the Diff Is Empty by Construction
 
@@ -645,9 +997,32 @@ engine-level generation difference can arise.
 then `Enum.valueOf(enumClass, name)`; `nullSafeSet` writes `st.setString(index, value.name())` or
 `st.setNull(index, Types.VARCHAR)`; and `disassemble`/`assemble` round-trip the enum **name string**. It
 implements `EnhancedUserType<Enum>, DynamicParameterizedType` — already the Hibernate 6/7 contract, and
-the sanctioned replacement for the removed `org.hibernate.type.EnumType`. Exactly **three** mapping sites
-consume it: `Obs.hbm.xml` twice and `OrderSet.hbm.xml` once. The only edit to that file in this change is
-a comment.
+the sanctioned replacement for the removed `org.hibernate.type.EnumType`. The only edit to that file in
+this change is a comment.
+
+**`StringEnumType` has four consumers, not three.** An earlier revision of this document counted only the
+HBM sites and said "exactly three", which is wrong: the type is also applied by annotation. The full,
+re-measured inventory — `git grep StringEnumType` across `*.hbm.xml` and `*.java` under `api/src/main`,
+excluding the type's own file:
+
+| # | Consumer | Site | Mapped column (live type) | Enum parameter |
+|---|---|---|---|---|
+| 1 | `Obs.hbm.xml` | line 67, `<type name="…StringEnumType">` | `obs.status` — `varchar(16)` | `org.openmrs.Obs$Status` |
+| 2 | `Obs.hbm.xml` | line 72, `<type name="…StringEnumType">` | `obs.interpretation` — `varchar(32)` | `org.openmrs.Obs$Interpretation` |
+| 3 | `OrderSet.hbm.xml` | line 31, `<type name="…StringEnumType">` | `order_set.operator` — `varchar(50)` | `org.openmrs.OrderSet$Operator` |
+| 4 | **`ConceptName.java`** | line 105, `@Type(value = StringEnumType.class, parameters = { @Parameter(name = "enumClass", value = "org.openmrs.api.ConceptNameType") })`, import at line 43 | `concept_name.concept_name_type` — `varchar(50)` | `org.openmrs.api.ConceptNameType` |
+
+The live column types are read from `information_schema.columns` on the installed schema, not inferred from
+the mapping metadata.
+
+The fourth consumer is the one that matters for reasoning about this type's future, and it is why the
+type's own javadoc carries a Rule 5 note (register item 5): `ConceptName` is **already annotation-mapped**
+— `@Entity` on the class — yet it still applies `StringEnumType` through `@Type`. So the "delete this
+class once every consumer is annotation-mapped" precondition in that javadoc is **partly satisfied
+already**, and completing the HBM migration for `Obs` and `OrderSet` would still not make the type
+removable. Three HBM sites plus one annotated site is also why the column-parity argument above is
+load-bearing for **four** columns rather than three; all four are `VARCHAR` columns holding the enum
+**name**, read and written by the same code path.
 
 > **Note:** the `liquibase/` module is **not** where the changelogs live. It declares **no
 > `liquibase-core` dependency at all**, and its four source files — `AbstractSnapshotTuner`,
@@ -766,7 +1141,9 @@ convention. Bean definitions, `ListFactoryBean` and `JndiObjectFactoryBean` were
 ### 6. Rule 5 Comment-Only Annotations
 
 Five files received comments and nothing else: `hibernate.default.properties`, `infinispan-api-local.xml`,
-`OrderValidator.java`, `DrugOrderValidator.java` and `StringEnumType.java`. They are itemised in the
+`OrderValidator.java`, `DrugOrderValidator.java` and `StringEnumType.java`. They are register items 1-5.
+**They are the only five files this change was authorised to annotate**, which is why register items 6 and
+7 are recorded in the register alone rather than at their sites — the reasons are given per item in the
 defect register below.
 
 ### 7. Inspected but Unmodified
@@ -791,7 +1168,22 @@ file was relocated.** The only new path in the entire change is this document.
 
 Rule 5 requires that defects found in passing be recorded in place rather than repaired, unless a repair
 is needed to satisfy a validation item. **No validation item is blocked by any of the seven items below,
-so none of them was fixed.** Each is annotated in a comment at its own site.
+so none of them was fixed.**
+
+**Where each item is recorded — stated precisely, because "all seven are commented at their sites" would
+not be true:**
+
+| Items | How they are recorded | Why |
+|---|---|---|
+| **1-5** | an in-place comment **at the defect's own site**, plus the register row below | all five sites are files the Agent Action Plan lists as in-scope comment-only updates (§0.2.1.5), so a site comment is both possible and attributable |
+| **6** | **this register only** — no source edit | the site is 2 keys replicated across **18** locale `.properties` files. §0.6.6 row 6 of the plan classifies this item **"out of scope entirely"**, and §0.2.1.5 enumerates exactly **five** Rule-5 comment-only files, none of them a locale file. Editing 18 translation catalogues has **no** Spring/Hibernate/Jakarta/Java-21 attribution, so Rule 1 forbids it |
+| **7** | **this register only** — no source edit | the site is the root `pom.xml` plugin pin, and the root POM is a **verify-only** file in this change: its planned outcome is a **byte-identical** file (§0.4.1.8 Group 8, "UPDATE (verify)"), with the skew explicitly delegated to *this document, register item 7*. Adding even a comment there would break that contract and produce an unattributable diff |
+
+So the accurate statement is: **items 1-5 carry a site comment and a register row; items 6 and 7 carry a
+register row only, each with the reason no source edit is permissible.** Nothing is repaired, nothing is
+dropped, and no item is described as annotated where it is not. That is Rule 5 honoured rather than
+weakened — the rule's purpose is that a discovered defect is *recorded and left alone*, and the register
+is the record wherever a site comment is not an authorised edit.
 
 | # | Site | Condition | Attributable to the target stack? |
 |---|---|---|---|
@@ -800,8 +1192,8 @@ so none of them was fixed.** Each is annotated in a comment at its own site.
 | 3 | `api/src/main/java/org/openmrs/validator/OrderValidator.java` | a comment cites `Order.hbm.xml`, which **does not exist** — only `OrderFrequency`, `OrderSet`, `OrderSetAttribute` and `OrderSetMember` HBM files exist; `Order` is annotation-mapped | **No**. Comment correction only |
 | 4 | `api/src/main/java/org/openmrs/validator/DrugOrderValidator.java` | the identical stale `Order.hbm.xml` citation | **No**. Comment correction only |
 | 5 | `api/src/main/java/org/openmrs/api/db/hibernate/type/StringEnumType.java` | the javadoc says the class should be deleted once `Obs`, `ConceptName` and `OrderSet` move from HBM to annotations, but `ConceptName` is **already annotated**, so the stated precondition is only partly satisfied | **No**. Comment correction only. **This file was promoted from inspected-only to edited solely because of Rule 5** — a directly traceable consequence of the rule |
-| 6 | 18 locale files, 2 keys each, e.g. `api/src/main/resources/messages.properties` | orphaned i18n keys for `org.openmrs.web.attribute.handler.LongFreeTextFileUploadHandler`, **a class with zero `.java` files** in the repository | **No** — **out of scope entirely**; deleting message keys is not attributable |
-| 7 | root `pom.xml` versus `bom/pom.xml` | `liquibase-maven-plugin` **4.33.0** against `liquibase-core` **4.32.0**. The plugin runs only in the `openmrs-liquibase` module's manual snapshot-generation configuration, never in the default lifecycle, so the skew cannot affect the build or the changelogs — and neither version removes the `jaxb-api` leak | **No**. Documented, not changed |
+| 6 | 18 locale files, 2 keys each, e.g. `api/src/main/resources/messages.properties` | orphaned i18n keys for `org.openmrs.web.attribute.handler.LongFreeTextFileUploadHandler`, **a class with zero `.java` files** in the repository | **No** — **out of scope entirely**; neither deleting nor annotating 18 message catalogues is attributable. **Recorded here only, no site comment** |
+| 7 | root `pom.xml` versus `bom/pom.xml` | `liquibase-maven-plugin` **4.33.0** against `liquibase-core` **4.32.0**. The plugin runs only in the `openmrs-liquibase` module's manual snapshot-generation configuration, never in the default lifecycle, so the skew cannot affect the build or the changelogs — and neither version removes the `jaxb-api` leak | **No**. **Recorded here only, no site comment** — the root POM is verify-only in this change and stays byte-identical |
 
 ### 1. Citing These Defects by Content, Not by Line
 
@@ -821,9 +1213,11 @@ identifiers and text do not.
 2. the five legacy Spring XSD version pins, because 2.5 and 3.0 grammars misdescribe a Spring 7 classpath;
 3. the `javax`-era `override-web.xml` root element, superseded by the Jakarta descriptor generation.
 
-Everything else discovered in passing was **annotated where it lives and left unfixed**. That is the
-distinction between Rule 1 and Rule 5 in practice: attribution decides whether a finding is repaired or
-merely recorded.
+Everything else discovered in passing was **left unfixed** — annotated where it lives for the five items
+whose sites this change was authorised to touch, and recorded in the register above for the two whose
+sites it was not (items 6 and 7, per the table at the head of this section). That is the distinction
+between Rule 1 and Rule 5 in practice: attribution decides whether a finding is repaired or merely
+recorded, and it also decides *where* the record can be written.
 
 ## Behavioural-Preservation Evidence
 
@@ -863,15 +1257,43 @@ key on it. The file was not modified.
 
 ### 3. The Exception Contract Is Insulated by Design
 
-There is **no Spring `PersistenceExceptionTranslator` or `HibernateExceptionTranslator` wired anywhere** —
-re-measured here as zero files referencing either. Instead the DAO layer declares **`throws DAOException`
-590 times** across `api/src/main/java/org/openmrs/api/db`, and `DAOException extends APIException`, which
-`extends RuntimeException`.
+Two facts have to be kept apart here, because an earlier revision of this document ran them together and
+said there was "no Spring `PersistenceExceptionTranslator` or `HibernateExceptionTranslator` wired
+anywhere … zero files referencing either". The first half is right; the second half is overbroad. Precisely:
 
-Because the entire hierarchy is **unchecked and OpenMRS-owned**, Jakarta and Hibernate exception-type churn
-**cannot alter a single declared signature**. This is the structural reason the requirement's
-*"`org.openmrs.api.*` signatures remain identical"* clause holds **without any compatibility shim**, and it
-is why the `NonUniqueResultException` deviation in section (d) is invisible at the service boundary.
+- **No translation is *wired*, and none happens.** `git grep PersistenceExceptionTranslationPostProcessor`
+  over the whole repository returns **zero** hits, in Java and in XML alike. That post-processor is the
+  only thing that turns `@Repository` into an exception-translating proxy, and outside Spring Boot — which
+  is absent from every POM — nothing registers it implicitly. So although **22** DAO classes under
+  `api/src/main/java/org/openmrs/api/db` do carry `@Repository`, **no DAO is ever proxied for
+  translation** and **no `DataAccessException` is ever produced** on any call path. This is the load-bearing
+  fact.
+- **A `PersistenceExceptionTranslator` implementation nevertheless exists in the context, by
+  inheritance.** `javap` on `spring-orm-7.0.7.jar` shows
+  `org.springframework.orm.jpa.hibernate.LocalSessionFactoryBean extends
+  org.springframework.orm.jpa.hibernate.HibernateExceptionTranslator`, and that class
+  `implements org.springframework.dao.support.PersistenceExceptionTranslator` with a
+  `translateExceptionIfPossible(RuntimeException)` method. Since
+  `HibernateSessionFactoryBean extends LocalSessionFactoryBean`, the platform's own session-factory bean
+  **inherits** that capability. Nothing in this repository calls it, overrides it, or registers a
+  post-processor that would consume it — the capability is present and **unconsumed**. Saying "zero files
+  reference either" was therefore wrong about the class hierarchy while being right about the wiring.
+
+What actually insulates the public contract is the OpenMRS exception hierarchy, not translation. The DAO
+layer declares **`throws DAOException` 590 times** across **38** files in
+`api/src/main/java/org/openmrs/api/db`, and `DAOException extends APIException`, which `extends
+RuntimeException`.
+
+Because that entire hierarchy is **unchecked and OpenMRS-owned**, Jakarta and Hibernate exception-type
+churn **cannot alter a single declared signature** — an unchecked exception needs no `throws` clause, so a
+change of concrete provider type propagates without touching any method declaration. This is the
+structural reason the requirement's *"`org.openmrs.api.*` signatures remain identical"* clause holds
+**without any compatibility shim**.
+
+It is **not**, however, a reason to call the `NonUniqueResultException` deviation in section (d)
+"invisible at the service boundary" — that claim was withdrawn there. Signature stability and
+concrete-type stability are different properties: the first is proven, the second is the recorded
+deviation. Section (d).2 sets out exactly which of the two each piece of evidence supports.
 
 ### 4. Untouched Query Primitives
 
@@ -886,8 +1308,16 @@ code expresses them explicitly. All counts below were re-measured across
 | Pagination | `Criteria.setFirstResult` / `setMaxResults` | `setFirstResult` — **7**; `setMaxResults` — **14** |
 
 Their correctness is a **verification obligation discharged by the test suite**, not a transformation
-obligation. Legacy residue is gone: **zero** usages of `org.hibernate.Criteria`, `org.hibernate.criterion`
-or `org.hibernate.transform` remain.
+obligation. Legacy residue is gone: **zero executable usages** of `org.hibernate.Criteria`,
+`org.hibernate.criterion` or `org.hibernate.transform` remain — no import, no type reference, no method call.
+
+> **One textual hit, and it is documentation.** A bare
+> `git grep "org.hibernate.Criteria" -- '*.java'` returns exactly **one** line, and a reader who stops there
+> will think the claim above is false. The hit is `DbSession.java:171`, inside the javadoc **this change
+> added**: *"Despite its legacy name, this method does not return the `org.hibernate.Criteria` that was
+> …"*. Prose naming a removed type in order to warn about it is the evidence, not a violation of it — the
+> same distinction recorded for gates A4/A5, where this document quotes the retired `java.sun.com`
+> namespace on purpose. Scope the grep to imports and type references and the count is **zero**.
 
 ### 5. DAO Structure Preserved
 
@@ -964,10 +1394,17 @@ jar is used.
   ./mvnw verify -Pperformance-test -B          # documented, NOT executed here
 
   # V3 - clean-database Liquibase run and mysqldump --no-data diff
-  #      EXECUTED. Both sides installed by Liquibase 4.32.0 into their own disposable
-  #      database - the "before" side from `git archive 3934d8086`-extracted changelog
-  #      bytes - then dumped and compared. Result: diff exit 0, zero differing lines,
-  #      identical MD5. Full procedure and measurements in section (e).
+  #      EXECUTED. Both sides installed by liquibase-core 4.32.0 into their OWN disposable,
+  #      clone-scoped database with an explicit --url per side - the "before" side from
+  #      `git archive 3934d8086`-extracted changelog bytes, cmp-verified 38 identical /
+  #      0 differing - then dumped with
+  #        mysqldump --no-data --skip-comments --skip-dump-date
+  #      and compared. Result: diff exit status 0, zero differing lines, both dumps
+  #      byte-identical at MD5 659f521033a44a4b95e57fe0bbe105a9, 119 tables / 1,510
+  #      columns / 697 indexes / 446 foreign keys / 1,028 changesets on each side, and the
+  #      shared `openmrs` database asserted unchanged at 126 tables / 1,065 changesets.
+  #      The full runnable script, its safety properties and the retained evidence files
+  #      are in section (e).4.
 
   # V4 - service-output capture; the V2 run IS the capture, against the fixed
   #      DBUnit reference datasets. Expect an identical pass set, an identical
@@ -1034,7 +1471,12 @@ jar is used.
     'api/src/main/resources/org/openmrs/liquibase/**' \
     'api/src/main/resources/**/*.hbm.xml' | wc -l                  # expect a non-zero count
 
-  # A8  build wall clock not materially regressed against 2:16 and 10:17
+  # A8  build wall clock shows no change of ORDER. Read Maven's own "Total time" line
+  #     rather than an external stopwatch, and treat it as a sanity check, not a
+  #     benchmark: neither the pre- nor the post-change run controlled for CPU
+  #     contention or repository warmth, so a minutes-vs-minutes comparison is all
+  #     that is supportable. Measured here: install 01:21 min, test 09:53 min.
+  grep -E '^\[INFO\] Total time' install.log test.log
 
   # A9  formatting conforms. The -D flag is LOAD-BEARING: the root pom.xml sets
   #     <spotless.check.skip>true</spotless.check.skip> by default and only the
@@ -1049,8 +1491,10 @@ jar is used.
 All of A1 through A10 were run against the changed tree and all passed. A4, A5 and A7 return zero over
 tracked source, with the build-output caveat on A5 recorded in the block above rather than left for a
 future reader to trip over; A9 reports `BUILD SUCCESS` with no file reformatted, using the explicit
-`-Dspotless.check.skip=false` that makes the goal actually execute; A8 is satisfied with the `install`
-phase measurably faster and `test` identical, as recorded in section (a).
+`-Dspotless.check.skip=false` that makes the goal actually execute; and A8 is satisfied in the only sense
+the evidence supports — `install` **01:21 min** and `test` **09:53 min**, both minutes-scale and both
+exiting 0, with **no** speed comparison drawn against the planning figures, for the reason set out in
+section (a).1.
 
 ### 3. Reading a Negative Grep Correctly
 
@@ -1084,12 +1528,18 @@ The same shape applies to V5, A1, A4 and A5. Every "expect 0 matches" comment in
 - [x] This document exists and carries the full evidence trail, including the executed section (e)
       comparison and the phase-labelled environment history behind it.
 - [x] Every UPDATE is traceable to a named target-stack justification, and every one of the seven
-      pre-existing defect register items is annotated in a comment at its site and left unfixed.
+      pre-existing defect register items is **left unfixed and recorded** — items 1-5 with an in-place
+      comment at their own site, items 6 and 7 in the register only, because the 18 locale catalogues and
+      the byte-identical verify-only root `pom.xml` are not files this change may annotate. See the
+      "where each item is recorded" table in the Pre-Existing Defect Register.
 - [x] The clean-database Liquibase run and `mysqldump --no-data` schema diff — **executed**, not merely
-      documented: two disposable databases installed by Liquibase 4.32.0 from base-commit and current
-      changelog bytes, both dumped and compared. **`diff` exit 0, zero differing lines, identical MD5
-      `e63817993751bc129d7a5843f3e41af1`, 119 tables / 1,510 columns / 697 indexes / 446 foreign keys /
-      1,028 changesets on each side.** See section (e).
+      documented: two disposable, clone-scoped databases installed by `liquibase-core` 4.32.0 from
+      base-commit and current changelog bytes, both dumped and compared. **`diff` exit status 0, zero
+      differing lines, both dumps byte-identical at MD5 `659f521033a44a4b95e57fe0bbe105a9`
+      (3,389 lines / 175,156 bytes each), 119 tables / 1,510 columns / 697 indexes / 446 foreign keys /
+      1,028 changesets on each side, and the shared `openmrs` database asserted unchanged at
+      126 tables / 1,065 changesets.** The runnable script, its fail-fast/trap/isolation properties and the
+      retained evidence files are in section (e).4.
 
 ## Further Reading
 
