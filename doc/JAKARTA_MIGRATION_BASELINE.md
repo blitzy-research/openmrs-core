@@ -101,7 +101,23 @@ raised.
 
 **All before/after comparisons in this document are taken against
 `3934d8086c684269e935562f25e806be91947115`** — the Agent Action Plan's base commit and the parent of the
-first change in this work. Every `"$BASE"` in every command block in this document is that hash.
+first change in this work. Every `"$BASE"` in every command block in this document is that hash, and it is
+assigned **here, in the document's first command block**, ahead of every later block that reads it:
+
+```bash
+  # Assign this FIRST. Every "$BASE" later in this document resolves to it.
+  BASE=3934d8086c684269e935562f25e806be91947115
+
+  # An UNSET BASE is a silent false pass, so guard it. With BASE empty or unset,
+  # `git diff --name-status "$BASE"..HEAD` degrades to `HEAD..HEAD`, prints nothing, and
+  # every "expect no output" gate in this document appears to pass while comparing a commit
+  # against itself. Run these blocks under `set -u`, or assert it explicitly.
+  # The `^{commit}` peel is what makes the assertion real: `git rev-parse --verify --quiet`
+  # accepts ANY full 40-hex string as a well-formed object NAME and exits 0 without the object
+  # existing - measured on git 2.51.0, a fabricated hash exits 0 bare and 1 when peeled.
+  test -n "${BASE:-}" && git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null \
+    || { echo "FATAL: BASE is unset, or does not resolve to a commit in this repository" >&2; exit 1; }
+```
 
 **Correction.** An earlier revision of this section said that
 `2cbf9d7f8762451bdf253455c6e988eef732b843` — the baseline a review pass over this change nominated —
@@ -206,6 +222,16 @@ find timings that differ from run 1 in the second decimal place and will *not* f
 figures in the logs any more. Only the outcomes are asserted to be reproducible; the wall clocks are
 published as a pair precisely so that no reader mistakes one uncontrolled sample for a benchmark, and
 so that a re-run producing 01:21 rather than 01:20 is visibly expected rather than a contradiction.
+
+**Those wall clocks are an observation, not a gate.** Further runs of the same code tree, in a sibling
+clone of this repository on the same host but under different concurrent load, measured `install` at
+**01:40 min** and **02:38 min** and `test` at **11:13 min** and **14:40 min**. Taken together with the two
+runs tabulated above and the planning figures of 2:16 and 10:17, `install` spans 01:20-02:38 (a spread of
+**+98%** over the fastest run) and `test` spans 10:07-14:40 (**+45%**), while **every one of those runs
+reported an identical 5,106 / 0 / 0 / 45**. The spread tracks CPU contention - sibling Maven reactors
+sharing one cgroup quota - rather than anything in the change set, so no wall-clock threshold can separate
+a real regression from a busy machine. Gate A8 in the reproduction section is therefore recorded as an
+**observation and must not be used to fail a build**; the deterministic gates carry the regression signal.
 
 Command 2 is the run behind the **post-change** columns of the per-module test table at the head of this
 section, and its 5,106 total is a sum of the five `Results:` blocks rather than a transcription: 4,929 +
@@ -399,23 +425,37 @@ itself appears **six** times. The mechanism was demonstrated in-repo before it w
 
 ### 4. Post-Change Scan: Zero javax Nodes
 
+The capture is written **outside the working tree**, deliberately. Redirecting it to `deptree.txt` in the
+repository root leaves an untracked file behind: the committed `.gitignore` carries **no** rule for it, so a
+fresh clone running the command as written dirties its own tree and undercuts the `git status` cleanliness
+gates below - in the clone where these figures were taken the file was masked only by `.git/info/exclude`,
+which is clone-local and never committed. `mktemp` removes the problem instead of relying on an ignore rule,
+and the `test -s` guard below closes the matching false-pass hole: with `$DEPTREE` unset or empty, every
+`grep` in this block would print nothing and each "expect 0 matches" gate would appear to pass without
+having inspected anything.
+
 ```bash
-  ./mvnw dependency:tree -B > deptree.txt
+  DEPTREE="$(mktemp -t deptree.XXXXXX.txt)"      # outside the working tree - see note above
+  ./mvnw dependency:tree -B > "$DEPTREE"
+  test -s "$DEPTREE" || { echo "FATAL: the dependency-tree capture is empty" >&2; exit 1; }
 
   # the requirement's own stated check - 0 matches BEFORE and AFTER (it already passed at baseline)
-  grep -E "javax\.(servlet|persistence)" deptree.txt
+  grep -E "javax\.(servlet|persistence)" "$DEPTREE"
 
   # stronger: ANY javax dependency-tree node - 6 matches BEFORE, 0 AFTER
-  grep -E "^\[INFO\][^:]*[+\\|-]- javax\." deptree.txt
+  grep -E "^\[INFO\][^:]*[+\\|-]- javax\." "$DEPTREE"
 
   # broadest sweep actually run here: the bare string, anywhere in the output - 0 AFTER
-  grep -n "javax\." deptree.txt
+  grep -n "javax\." "$DEPTREE"
 
   # gate A1 - the three removed coordinates must be gone
-  grep -E "commons-fileupload|groovy-all|commons-fileupload2" deptree.txt
+  grep -E "commons-fileupload|groovy-all|commons-fileupload2" "$DEPTREE"
 
   # liquibase-core itself must SURVIVE (only its jaxb-api child is excluded)
-  grep -c "liquibase-core" deptree.txt   # expect 6
+  grep -c "liquibase-core" "$DEPTREE"   # expect 6
+
+  wc -l < "$DEPTREE"                    # expect 1620 (1641 at the base commit)
+  rm -f "$DEPTREE"
 ```
 
 Measured against the 1,620-line post-change capture: the requirement's grep returns **0**, the stronger
@@ -479,7 +519,7 @@ scopes. Readers must scan `dependency:tree` output, not raw build logs, and must
 |---|---|---|
 | `commons-fileupload:commons-fileupload:1.6.0` | leaf, no children; `openmrs-web` (compile), `openmrs-webapp` (compile), `test-suite-module-omod` (provided) | a javax.servlet-generation API surface with **zero source imports**; multipart handling runs through Spring's `StandardServletMultipartResolver` in `web/src/main/java/org/openmrs/web/WebConfig.java` |
 | `org.apache.commons:commons-fileupload2-jakarta-servlet6:2.0.0-M5` | drags `commons-fileupload2-core:2.0.0-M5`; same three modules | **zero source references**; a **milestone (non-GA)** artifact — no GA has ever been published |
-| `org.codehaus.groovy:groovy-all:2.4.21` | leaf, no children; `openmrs-api` (compile), `openmrs-web`, `openmrs-webapp`, `test-suite-module-api` (provided), `test-suite-performance` (test) | **zero** `import groovy.` and **zero** `import org.codehaus.groovy.` repository-wide; Groovy 2.4 **predates Java 9** |
+| `org.codehaus.groovy:groovy-all:2.4.21` | leaf, no children; **six** carriers - `openmrs-api` (compile), `openmrs-web` (compile), `openmrs-webapp` (compile), `test-suite-module-api` (provided), `test-suite-module-omod` (provided), `test-suite-performance` (test) | **zero** `import groovy.` and **zero** `import org.codehaus.groovy.` repository-wide; Groovy 2.4 **predates Java 9** |
 
 Each of those three is a **four-coupled-edit removal (TR5)**: the module POM declaration, the
 `bom/pom.xml` managed entry, the `bom/pom.xml` version property and the `NOTICE.md` attribution line,
@@ -493,6 +533,23 @@ All four edits landed for all three coordinates. Post-change verification: the c
 **no** POM in the reactor, in **no** dependency-tree node, and in **no** `NOTICE.md` line, while the
 attributions that must survive — `commons-collections`, `liquibase-core`, the Infinispan entries,
 `jakarta.xml.bind-api`, `jaxb-runtime` and `type-converter` — are all still present.
+
+The footprints above are checkable by arithmetic rather than by inspection alone, which is why every carrier
+is enumerated in full. The base-commit `dependency:tree` is **1,641** lines and the post-change tree is
+**1,620**; the **21**-line difference reconciles exactly, and the count was taken from both captures rather
+than inferred:
+
+| Removed dependency-tree node | Occurrences |
+|---|---|
+| `javax.xml.bind:jaxb-api:2.3.1` (excluded from `liquibase-core`) | 6 |
+| `org.codehaus.groovy:groovy-all:2.4.21` | 6 |
+| `commons-fileupload:commons-fileupload:1.6.0` | 3 |
+| `org.apache.commons:commons-fileupload2-jakarta-servlet6:2.0.0-M5` | 3 |
+| `org.apache.commons:commons-fileupload2-core:2.0.0-M5` (dragged by the line above) | 3 |
+| **TOTAL removed tree lines** | **21** |
+
+The delta balances **only** at six `groovy-all` carriers, so the line count is an independent check on that
+row: an enumeration listing five would leave the 1,641 → 1,620 arithmetic one line short.
 
 ### 7. The False Positive Cleared Before Scheduling Those Removals
 
@@ -585,11 +642,31 @@ The remaining `javax.*` imports are **JDK-shipped and out of scope by definition
 > The correction is stated openly because an evidence document that quietly repeats an arithmetic error
 > is worse than one that shows its working.
 
-A second measurement note, for anyone who re-runs the census: counting with `find` instead of
-`git ls-files` yields 1,288 rather than 1,273, because 15 untracked, git-ignored scratch files sit
-outside `target/`. **1,273 is the tracked-file count**, it is identical at the base commit and at the
-changed tree, and restricting the census to tracked files leaves `api` at 82, `web` at 12 and the
-forbidden-import count at 0 unchanged.
+A second measurement note, for anyone who re-runs the census. **1,273 is the *tracked* file count** —
+`git ls-files '*.java' | wc -l`, split 846 main / 427 test — and it is identical at the base commit and at
+the changed tree, so `api` stays at 82 `javax.*` imports, `web` at 12 and the forbidden-import count at 0.
+A bare `find`, by contrast, counts whatever the working tree happens to hold, so the two agree only in a
+scratch-free clone: in a pristine clone `find` also returns 1,273, while a clone carrying ignored scratch
+trees returns more. That is not a census error and it does not need guessing at, because the two counts
+reconcile exactly — tracked plus untracked equals the `find` total — and these six commands measure every
+term of it:
+
+```bash
+  git ls-files '*.java' | wc -l                                # the tracked census: 1273
+  git ls-files --others '*.java' | wc -l                        # untracked, INCLUDING git-ignored
+  git ls-files --others --exclude-standard '*.java' | wc -l     # expect 0: nothing untracked-but-unignored
+  find . -name '*.java' -type f -not -path './.git/*' \
+                               -not -path '*/target/*' | wc -l  # equals the sum of the first two
+  find . -path '*/target/*' -name '*.java' | wc -l              # expect 0: none under target/
+  git ls-files --others '*.java' | xargs -r -n1 git check-ignore -v   # names the rule ignoring each one
+```
+
+Measured in the clone these figures were taken from: **1,273** tracked, **15** untracked-and-git-ignored
+(five QA probe sources plus ten scratch copies under an ignored `logs/` tree, attributed to
+`.gitignore:81:**/logs`), **0** untracked-but-unignored, **1,288** from `find` — which is 1,273 + 15 — and
+**0** under `target/`. The 15 sit outside every Maven source root, so they can enter neither a build nor a
+commit; the namespace guard and the per-module `javax.*` breakdown are stated over the tracked set, which
+is the only clone-independent one.
 
 ### 4. The Obligation Inverted Into a Standing Guard
 
@@ -629,7 +706,10 @@ The second-level cache and the Spring cache manager stay on **`org.infinispan:in
 and **`org.infinispan:infinispan-hibernate-cache-v62`** at **15.2.6.Final**, *even under Spring 7 and
 Hibernate 7*, because the newer-looking coordinates **do not exist**:
 
-- `infinispan-spring7-embedded` does not exist below **16.1.3**.
+- `infinispan-spring7-embedded` **does not exist at `15.2.6.Final`**, and its earliest published version
+  is **16.0.4** - not 16.1.3, as an earlier revision of this document stated. Maven Central's
+  `maven-metadata.xml` for the artifact lists **24** versions, every one of them 16.x (16.0.4 through
+  16.3.0.Dev01); the `15.2.6.Final` coordinate returns **HTTP 404**.
 - No `-hibernate-cache-v70` or `-v73` module has ever been published; that line tops out at `-v66`,
   which is 16.x only.
 
@@ -770,6 +850,20 @@ removed or renamed on either side — and only then was each of the **38** files
 **38 compared, 0 differing**. The two-stage order matters, and the earlier single-stage form is
 **withdrawn**: a loop driven by the base listing cannot, even in principle, notice a changelog that exists
 only in the current tree.
+
+That **38** is the measured size of the frozen changelog set, and it is worth reconciling against
+the Agent Action Plan, which describes that set as "38 `liquibase-*.xml` files in
+`api/src/main/resources` plus 32 files under `api/src/main/resources/org/openmrs/liquibase/...`" —
+an arithmetic that reads as 70. Measured at `3934d8086` and again at the changed tree, with both
+censuses identical: **6** changelogs sit directly under `api/src/main/resources`
+(`liquibase-core-data.xml`, `liquibase-empty-changelog.xml`, `liquibase-schema-only.xml`,
+`liquibase-update-to-latest-from-1.9.x.xml`, `liquibase-update-to-latest-template.xml`,
+`liquibase-update-to-latest.xml`) and **32** under `org/openmrs/liquibase/**` — 20 snapshots, being
+10 `core-data` and 10 `schema-only`, plus 12 `updates`. The plan's 38 is therefore the *total*
+rather than the top-level count, the frozen set is 6 + 32 = **38** files and every one of them is
+XML, and the measured value is the one this document uses. The `cmp` loop derives that count from
+the listing it just built rather than hard-coding it, so the figure cannot go stale if a changelog
+is ever added.
 
 The two sides are also **symmetric in what they expose to the engine**, which an earlier revision was not.
 That revision handed the current side the whole live resource root, `api/src/main/resources` — which
@@ -1045,6 +1139,20 @@ cannot do so says so out loud.
 > two this script uses: keep the secret off persistent storage (`tmpfs`), and scope it to a credential
 > that is disposable. An earlier revision of this document recommended substituting `shred -u` "if a
 > shredding guarantee is required"; that advice was wrong and is **withdrawn**.
+
+Two preconditions decide whether this works at all, so both are stated here rather than left for the
+reader to discover at the first `CREATE DATABASE`:
+
+- **The account must be able to `CREATE DATABASE`.** The documented *application* account
+  `openmrs`/`openmrs` **cannot**: it holds `USAGE ON *.*` plus `ALL PRIVILEGES` on a fixed list of
+  pre-granted schemas only, so creating any other database fails with
+  `ERROR 1044 (42000): Access denied for user 'openmrs'@'%' to database ...`. That failure is the reason
+  the script below connects as an administrative account and takes its password from `DB_PASS`; run with the
+  unprivileged credential instead, it aborts at the first `CREATE DATABASE` and prints no `PASS` line.
+- **Credentials go in a defaults file, never in `argv`.** Both the client `--defaults-extra-file` and
+  Liquibase's `--defaultsFile` are written under `umask 077` at mode `600`. The `-u <user> -p<pw>` form that
+  looks natural in prose is **not executable**: the shell reads `<user>` and `>` as input/output
+  redirection, so the command fails before `mysqldump` ever starts.
 
 Save the block below to a file and run it; it is the script, not an excerpt of one. Its
 `#!/usr/bin/env bash` line sits **flush left on purpose** — the kernel honours an interpreter directive
@@ -1370,9 +1478,25 @@ remaining lines is this document's own formatting, which the shell ignores.
       UNION ALL SELECT 'changesets', COUNT(*) FROM \`$db\`.liquibasechangelog;" > "$EVIDENCE/metrics-$label.txt"
     then printf 'FATAL: could not read metrics for %s\n' "$db" >&2; exit 1; fi
 
+    # 9a. MAGNITUDE, not just success. A changelog that applied nothing, or a side pointed at a
+    #     resource root holding no changelog, would leave an EMPTY database whose dump diffs
+    #     clean against another empty dump - success reported without a schema having been built.
+    local sets
+    sets="$(awk -F'\t' '$1=="changesets"{print $2}' "$EVIDENCE/metrics-$label.txt")"
+    if [ "$sets" != 1028 ]; then
+      printf 'FATAL: %s applied %s changesets, expected 1028\n' "$db" "${sets:-none}" >&2; exit 1; fi
+
     if ! mysqldump --defaults-extra-file="$MYSQL_CNF" --no-data --skip-comments --skip-dump-date \
         "$db" > "$EVIDENCE/schema-$label.sql"
     then printf 'FATAL: mysqldump failed for %s\n' "$db" >&2; exit 1; fi
+
+    # 9b. The dump itself must carry the expected DDL volume, so an error preamble or a
+    #     truncated dump can never reach the comparison in step 10.
+    local tabs
+    tabs="$(grep -c '^CREATE TABLE' "$EVIDENCE/schema-$label.sql" || true)"
+    if [ "$tabs" != 119 ]; then
+      printf 'FATAL: %s dump holds %s CREATE TABLE statements, expected 119\n' \
+        "$db" "${tabs:-0}" >&2; exit 1; fi
   }
   run_side "$DB_BEFORE" "$BASE_ROOT"     before      # base-commit changelog bytes
   run_side "$DB_AFTER"  "$CURRENT_ROOT" after       # working-tree changelog bytes, same closure
@@ -1429,6 +1553,22 @@ remaining lines is this document's own formatting, which the shell ignores.
   printf 'PASS: schemas identical, and every resource this run created was released\n'
   printf 'evidence: %s\n' "$EVIDENCE"
 ```
+
+Every assertion in that script is load-bearing, and each closes a distinct way for a schema comparison to
+report success without having compared two real schemas:
+
+| Guard | The false pass it closes |
+|---|---|
+| `set -euo pipefail` | a failed step swallowed, so a later step compares empty or stale files |
+| `if ! git archive "$BASE_COMMIT" … ; then FATAL` | an unresolvable base commit yielding an empty "before" side - `git archive` fails outright on a hash that does not resolve, which is why no separate `rev-parse --verify` is used here (bare `rev-parse --verify` would accept a fabricated 40-hex string) |
+| the changelog **file-set** diff, then `cmp` over all 38 files | a changelog added, removed or edited on one side only |
+| `grep` for `liquibase-core/4.32.0/` on the resolved classpath | either side installed by an engine other than the pinned 4.32.0 |
+| `[ "$sets" != 1028 ]` | a partially applied - or entirely unapplied - changelog passing as a complete schema |
+| `[ "$tabs" != 119 ]` | an empty dump, or a `mysqldump` error preamble, being diffed against another one |
+| the timestamp-normalised engine-log diff | the same DDL reached by different changeset execution |
+| `DIFF_STATUS` captured and asserted in step 12 | a non-zero `diff` status discarded by the shell |
+| the shared-database pre/post `cmp` | collateral damage to `openmrs` going unnoticed |
+| `cleanup` checked, plus the `EXIT`/`INT`/`TERM` traps | leftover databases or credential files, and an interruption reported as a pass |
 
 `$DB_PASS` is supplied by the operator from the environment (the containerised development server in
 `docker-compose.yml` uses the project's default), so no credential is written into this document. The
@@ -1558,8 +1698,24 @@ obligation is discharged by this affirmative, evidenced statement rather than by
 
 The evidence, all verified:
 
-- `api/src/test/java/org/openmrs/test/jupiter/BaseContextSensitiveNonTransactionalTest.java` is **1,045
-  lines** and already imports **only** Jakarta, Spring 7 and DBUnit 3 APIs.
+- `api/src/test/java/org/openmrs/test/jupiter/BaseContextSensitiveNonTransactionalTest.java` is
+  **1,045 lines** and carries **91** imports, **not one of which is a removed-stack API**. An
+  earlier revision claimed it "imports only Jakarta, Spring 7 and DBUnit 3 APIs"; that is
+  **withdrawn** as doubly wrong — the file imports **zero** `jakarta.*` packages, and it does import
+  `javax.*`. The measured census: **0** `jakarta.*`; **7** `javax.swing` on lines 37-43 (`JFrame`,
+  `JLabel`, `JOptionPane`, `JPanel`, `JPasswordField`, `JTextField`, `UIManager`) — JDK-shipped and
+  explicitly permitted by the standing guard in section (c).4; **25** `java.*` (`java.util` 7,
+  `java.io` 7, `java.awt` 6, `java.sql` 4, `java.nio.charset` 1 — the `java.awt` and `javax.swing`
+  pair being the Swing password prompt the harness shows when a real database is configured); **16**
+  `org.dbunit.*` (`org.dbunit.dataset` 9, `org.dbunit.database` 3, the `org.dbunit` root 2,
+  `org.dbunit.ext` 1, `org.dbunit.operation` 1); **21** `org.openmrs.*`; **6**
+  `org.springframework.*`; **5** `org.junit.jupiter.*`; **2** `org.mockito.*`; **3**
+  `org.hibernate.*`; **3** `org.apache.commons.*`; **2** `org.slf4j.*`; **1** `org.xml.sax`. Those
+  family counts **sum to 91**, so the census is exhaustive rather than illustrative, and greps for
+  every removed-generation API — `javax.servlet`, `javax.persistence`, `javax.validation`,
+  `javax.annotation`, `javax.transaction`, `org.hibernate.Criteria`,
+  `org.springframework.orm.hibernate5` — return **0 hits**. That, not the withdrawn sentence, is
+  what makes the zero-adaptation conclusion below sound.
 - The harness runs on **DBUnit 3.0.0**, **JUnit Jupiter 6.0.3**, **Mockito 5.23.0**, **Spring Test
   7.0.7** and **H2 2.3.232**, with `SpringExtension` and `MockitoExtension`.
 - `Environment.DIALECT` is set to `H2Dialect`, and the URL is
@@ -1903,12 +2059,19 @@ jar is used.
 ### 1. Validation Items V1-V5
 
 ```bash
-  # V1 - build exits 0 and the resolved graph is javax-free
+  # V1 - build exits 0 and the resolved graph is javax-free.
+  #      The capture goes to a mktemp file, NOT to deptree.txt in the repository root: the
+  #      committed .gitignore has no rule for that name, so writing it there would leave the
+  #      tree dirty and undercut the A7 / `git status` cleanliness gates below. The `test -s`
+  #      guard matters just as much - with $DEPTREE unset or empty every grep prints nothing
+  #      and all three "expect 0 matches" lines would pass without inspecting anything.
   ./mvnw clean install -DskipTests -B          # expect exit 0, 13/13 reactor projects
-  ./mvnw dependency:tree -B > deptree.txt
-  grep -E "javax\.(servlet|persistence)" deptree.txt          # expect 0 matches
-  grep -E "^\[INFO\][^:]*[+\\|-]- javax\." deptree.txt        # expect 0 matches
-  grep -n "javax\." deptree.txt                               # expect 0 matches (broadest sweep)
+  DEPTREE="$(mktemp -t deptree.XXXXXX.txt)"
+  ./mvnw dependency:tree -B > "$DEPTREE"
+  test -s "$DEPTREE" || { echo "FATAL: empty dependency-tree capture" >&2; exit 1; }
+  grep -E "javax\.(servlet|persistence)" "$DEPTREE"           # expect 0 matches
+  grep -E "^\[INFO\][^:]*[+\\|-]- javax\." "$DEPTREE"         # expect 0 matches
+  grep -n "javax\." "$DEPTREE"                                # expect 0 matches (broadest sweep)
 
   # V2 - the suite passes 100% with the skip ceiling intact
   ./mvnw test -B
@@ -1947,9 +2110,12 @@ jar is used.
 ### 2. Additional Gates A1-A10
 
 ```bash
-  # A1  removed coordinates absent from the resolved graph
-  grep -E "commons-fileupload|groovy-all|commons-fileupload2" deptree.txt   # expect 0
-  grep -c "liquibase-core" deptree.txt                                     # expect 6 (it must survive)
+  # A1  removed coordinates absent from the resolved graph. Reuses the $DEPTREE capture
+  #     from V1 above; re-assert it rather than trusting it, then delete it when done.
+  test -s "${DEPTREE:-}" || { echo "FATAL: \$DEPTREE is unset or empty" >&2; exit 1; }
+  grep -E "commons-fileupload|groovy-all|commons-fileupload2" "$DEPTREE"    # expect 0
+  grep -c "liquibase-core" "$DEPTREE"                                      # expect 6 (it must survive)
+  wc -l < "$DEPTREE"                                                       # expect 1620
 
   # A2  NOTICE.md attribution is truthful: nothing attributed that is no longer shipped,
   #     while the coordinates that ARE still shipped keep their attribution.
@@ -2041,11 +2207,13 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
     printf '%-52s %s\n' "$p" "$(git ls-files -- "$p" | wc -l)"     # expect every count >= 1
   done
 
-  # A8  build wall clock shows no change of ORDER. Read Maven's own "Total time" line
-  #     rather than an external stopwatch, and treat it as a sanity check, not a
-  #     benchmark: neither the pre- nor the post-change run controlled for CPU
-  #     contention or repository warmth, so a minutes-vs-minutes comparison is all
-  #     that is supportable. Both logs must be RETAINED for the grep to have anything to
+  # A8  build wall clock, recorded as an OBSERVATION - not a gate. Do NOT fail a build on
+  #     it. Read Maven's own "Total time" line rather than an external stopwatch. Measured
+  #     runs of this same tree span 01:20-02:38 for install and 10:07-14:40 for test, all
+  #     reporting an identical 5,106/0/0/45, because nothing here controls for CPU
+  #     contention or repository warmth; any threshold tight enough to catch a real
+  #     regression would fire on a busy host. What IS asserted is the pair of exit codes and
+  #     the test totals below. Both logs must be RETAINED for the grep to have anything to
   #     read: a timing quoted from a log the run did not keep is a figure no reader can
   #     check.
   ./mvnw clean install -DskipTests -B > install.log 2>&1; echo "install exit=$?"
@@ -2136,7 +2304,7 @@ executed verbatim, and every line it printed is reproduced here:
 | A5 | `java.sun.com/xml/ns/javaee` over tracked `*.xml` — no output | 0 | PASS |
 | A6 | shade/transformer/relocate — no output; managed `<plugin>` elements **23** | 0; 23 | PASS |
 | A7 | committed diff vs base — no output; worktree status — no output; per-pattern counts **6, 32, 20, 1, 1, 1, 1, 1** | no output ×2; each ≥ 1 | PASS |
-| A8 | `SUCCESS [` count **13**; `blocks=5 run=5106 failures=0 errors=0 skipped=45`; `Total time` **01:20 min** / **10:42 min** on run 1 and **01:21 min** / **10:47 min** on the run-2 re-execution — this gate rewrites both logs, so the timings are a sanity check on *order*, not a value to reproduce | 13; 5,106/0/0/45 | PASS |
+| A8 | `SUCCESS [` count **13**; `blocks=5 run=5106 failures=0 errors=0 skipped=45`; `Total time` **01:20 min** / **10:42 min** on run 1 and **01:21 min** / **10:47 min** on the run-2 re-execution — an **observation, not a gate**: the timings are not a value to reproduce (other runs of this tree measured 02:38 and 14:40), and only the **13** and the **5,106/0/0/45** are asserted | 13; 5,106/0/0/45 | PASS |
 | A9 | `BUILD SUCCESS`, **0 violations**, no file reformatted | 0 violations | PASS |
 | A10 | `PASS: A10 - document present, structurally sound, all mandated sections found` | that line, exit 0 | PASS |
 
@@ -2146,9 +2314,10 @@ measure *tracked* `*.xml` only, for the two reasons given in the block above —
 purpose when recording the `override-web.xml` transformation. **A7**'s per-pattern counts are the
 non-vacuity proof: a pathspec matching nothing also prints nothing, so each of the eight frozen patterns is
 counted separately, and the count of **1** against `initial_test_db.sql` is the one an earlier revision of
-the gate could not have produced, because the pattern was absent. **A8** is satisfied only in the sense the
-evidence supports — both phases minutes-scale and both exiting 0, with **no** speed comparison drawn against
-the planning figures, for the reason set out in section (a).1; both timings are quoted from the `Total time`
+the gate could not have produced, because the pattern was absent. **A8** is an **observation rather than a gate** and must not fail a build: it is satisfied in the
+sense the evidence supports — both phases minutes-scale, both exiting 0, and the asserted outcomes (13 of 13
+projects, 5,106/0/0/45) reproduced — with **no** speed comparison drawn against the planning figures, for
+the reason set out in section (a).1; both timings are quoted from the `Total time`
 line of a **retained** log, which is why the gate now redirects to `install.log` and `test.log` instead of
 discarding the output. **A9**'s pass is non-vacuous only because of the explicit
 `-Dspotless.check.skip=false`, and 12 of the 13 projects genuinely execute the goal.
@@ -2160,11 +2329,16 @@ status 1**, not 0, so a naive `&&` chain or a `set -e` script treats a passing g
 each negative check so the intent is explicit:
 
 ```bash
-  if grep -Eq '^\[INFO\][^:]*[+\\|-]- javax\.' deptree.txt; then
+  # Guard the input FIRST. An unset or empty $DEPTREE makes `grep -q` exit 2, the `if` false,
+  # and the block print PASS without having inspected a single line - a false pass inside the
+  # very section that explains how to read a negative grep.
+  test -s "${DEPTREE:-}" || { echo 'FATAL: $DEPTREE is unset or empty' >&2; exit 1; }
+  if grep -Eq '^\[INFO\][^:]*[+\\|-]- javax\.' "$DEPTREE"; then
     echo 'FAIL: unexpected javax dependency-tree node' >&2
     exit 1
   fi
   echo 'PASS: no javax dependency-tree node'
+  rm -f "$DEPTREE"
 ```
 
 The same shape applies to V5, A1, A4 and A5. Every "expect 0 matches" comment in this document means
