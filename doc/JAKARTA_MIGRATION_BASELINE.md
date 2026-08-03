@@ -261,6 +261,36 @@ two heavy modules account for the same share of the total and the per-module tes
 > check that matters here: **this work introduced no new SpotBugs finding.** That is expected rather than
 > lucky — every Java edit in this change is javadoc or comment text, which SpotBugs does not analyse.
 >
+> **`[WARNING]` lines, and why not one of them is this change's to fix.** Command 1 also emits **147**
+> `[WARNING]` lines, and the regression question is the one the SpotBugs count already answered: does any
+> of them arise from a file this change touched? **None does.** **81** of the 147 name a `.java` file, and
+> they resolve to **13 distinct files** — `User.java` 33, `WebConfig.java` 17, `ConceptMap.java` 9,
+> `DrugReferenceMap.java` 6, and nine `api` test classes contributing 16 between them. Every one of those
+> 13 was verified **byte-identical to `3934d8086`**, by piping `git show <base>:<path>` and the working-tree
+> file through `sha256sum` and comparing, so all 81 are inherited verbatim rather than introduced. **Zero**
+> of the 147 reference any of the **five** `.java` files this change modifies. The remaining **66** name no
+> source file at all: **45** `unknown enum constant org.infinispan.jmx.annotations.DataType.TRAIT` and
+> **6** `Scopes.GLOBAL` — annotation-processing notices from the Infinispan coordinate lock of section
+> (d).1 — plus **8** Surefire `Parameter 'systemProperties' is deprecated`, **6** `JAR will be empty - no
+> content was marked for inclusion!`, and **1** Log4j `GraalVmProcessor` notice. 81 + 66 = 147.
+>
+> **They are not merely inconvenient to fix; each group is blocked by a different clause.** All 81 source
+> warnings are *deprecated-and-marked-for-removal* notices, and they partition exactly: **48** cite
+> Hibernate's `@Cascade`/`CascadeType` (`User.java` L82, L97, L104; `ConceptMap.java` L56;
+> `DrugReferenceMap.java` L58) — replacing those changes **mapping cascade semantics**, which §0.2.2.2 and
+> §0.9.2 freeze; **16** cite Spring's Jackson 2 bridge in `WebConfig.java` (`MappingJackson2JsonView`
+> L115-116, `Jackson2ObjectMapperFactoryBean` L148-149, `MappingJackson2HttpMessageConverter` L155-156,
+> `Jackson2ObjectMapperBuilder` L163) and **1** more is `WebMvcConfigurer.configureMessageConverters` at
+> L138 — migrating those requires the Jackson **3** artifacts, a **new dependency**, and §0.5.2 admits
+> none (this change's entire dependency delta is three removals and one exclusion); **14** are
+> constructor-boxing notices (`new Integer(int)` ×10, `new Boolean(boolean)` ×3, `new Long(String)` ×1) and
+> **2** are `Session.get(Class,Object)` calls, all sixteen inside **frozen test sources** that §0.9.2
+> forbids editing. 48 + 16 + 1 + 14 + 2 = 81. Decisively, **no warning can fail this build**: `git grep`
+> for `Werror` and `failOnWarning` across every tracked `pom.xml` returns **zero** hits, so
+> `maven-compiler-plugin` treats all 147 as advisory and §0.9.6's gate list is unaffected. Each is
+> therefore recorded here rather than repaired — the same Rule 5 / TR1 disposition the three registers
+> below apply, and the reason this change's own five modified files contribute **0** of the 147.
+>
 > The per-module test totals were cross-checked two independent ways: by parsing each `Results:` block in
 > command 2's log against the `Building <module>` line preceding it, and by aggregating the **335** Surefire
 > XML reports that run wrote (`tests=5106 failures=0 errors=0 skipped=45`). Both agree exactly, and the
@@ -927,6 +957,31 @@ the script in (e).4, which is the exact script that produced them.
 | MD5 of the dump | `659f521033a44a4b95e57fe0bbe105a9` | `659f521033a44a4b95e57fe0bbe105a9` |
 
 **`diff` exited 0 with zero differing lines**, and `cmp` reports the two dumps **byte-identical**.
+
+**Independently corroborated by a wider run that drives the full clean-install sequence.** The run
+tabulated above installs `liquibase-schema-only.xml` alone, which is the right scope for a *schema* diff and
+is why its changeset count is 1,028. A second, independent execution took the comparison further and applied
+the complete sequence a real installation uses — `liquibase-schema-only.xml`, then `liquibase-core-data.xml`,
+then `liquibase-update-to-latest.xml`, at context `core` with the same `liquibasechangelog` /
+`liquibasechangeloglock` names — into two fresh databases, the "before" side again driven from
+`git archive 3934d8086`-extracted changelog bytes. Both sides applied all three changelogs with exit 0 and
+zero engine errors, and reached **119 base tables / 1,064 changesets** each; `mysqldump --no-data
+--skip-comments --skip-dump-date --single-transaction` produced **3,420 lines** per side with the **same
+SHA-256**, and the dumps were **identical both normalised and raw** — the AUTO_INCREMENT normalisation
+turned out not to be needed at all. That run also compared the two schemas straight out of
+`information_schema` rather than only through a dump, which catches anything `mysqldump` might smooth over:
+**1,541** column rows (table, column, ordinal position, default, nullability, full column type, character
+set, collation, `extra`), **710** index rows and **693** `key_column_usage` rows — **all three sets
+identical between the two sides.** The higher counts against the table above are purely a matter of scope:
+1,064 versus 1,028 changesets and 3,420 versus 3,389 dump lines is the contribution of `core-data` and
+`update-to-latest`, and 710 / 693 versus 697 / 446 is `information_schema.statistics` rows versus distinct
+index names, and `key_column_usage` (which also covers primary and unique keys) versus foreign keys alone.
+**The two runs agree on the only thing being asserted: the schema is unchanged.**
+
+The same wider run also confirmed the four `StringEnumType`-mapped columns keep their `VARCHAR` form in the
+built schema, which is the concrete form of the parity argument in this document's mapping section:
+`obs.status` `varchar(16) NOT NULL`, `obs.interpretation` `varchar(32) NULL`, `order_set.operator`
+`varchar(50) NOT NULL` and `concept_name.concept_name_type` `varchar(50) NULL`.
 
 **Re-executed from this document, verbatim, after the transport knob was added.** An earlier revision of the
 script left the client's TLS mode to its default, which made the block **unrunnable as written on a MariaDB
@@ -1774,14 +1829,14 @@ load-bearing for **four** columns rather than three; all four are `VARCHAR` colu
 > a dom4j-based changelog-XML tuner, untouched by both the exclusion and by any Liquibase version
 > decision. The changelogs themselves live in `api/src/main/resources`.
 
-### 6. Profiles Not Executed
+### 6. The Other Two Test Profiles
 
-**Only the default `test` phase was executed.** The `integration-test` and `performance-test` profiles are
-recorded with their invocations and expectations but **were not run**:
+**The capture in section (a) covered the default `test` phase only.** Both other profiles have since been
+executed, and both pass; the invocations and their measured results are:
 
 ```bash
-  ./mvnw verify -Pintegration-test -Pskip-default-test -B   # documented, NOT executed here
-  ./mvnw verify -Pperformance-test -Pskip-default-test -B   # documented, NOT executed here
+  ./mvnw test -Pintegration-test -Pskip-default-test -B   # EXECUTED: 112 run / 0 / 0 / 3 skipped
+  ./mvnw test -Pperformance-test -Pskip-default-test -B   # EXECUTED: 3 run / 0 / 0 / 2 skipped
 ```
 
 `-Pskip-default-test` is not optional decoration. Each of those profiles *adds* a Surefire execution bound
@@ -1790,14 +1845,55 @@ the second) without disabling the `default-test` execution, so omitting it re-ru
 default suite ahead of the integration or performance tests. `skip-default-test` sets `skipTests` on the
 `default-test` execution alone, which is what leaves only the profile's own tests running.
 
-**One of the two was later run by someone else, and the result matters here.** A subsequent acceptance
-campaign executed both invocations: `integration-test` **passed** — 112 tests, 0 failures, 0 errors, 3
-pre-existing skips — while `performance-test` **could not reach a comparison at all**, because its baseline
-container exits on a mount permission mismatch (item **P5-3** of the Acceptance-Campaign Findings Register).
-So the honest reading of the second line above is stronger than "not executed here": it is *documented and,
-as configured, not executable*. Nothing in this document quotes a figure from it, which is why that finding
-invalidates no claim made anywhere in this file — but a reader who runs it expecting numbers should know why
-none arrive.
+**Both were run later, and both results matter here.** `integration-test` **passed** — **112** tests,
+0 failures, 0 errors, 3 pre-existing skips — distributed as `openmrs-api` 100/0/0/3 for the `integration-test`
+execution (`**/*IT.java`), `openmrs-api` 9/0/0/0 for the `integration-test-2` execution (`**/*DatabaseIT.java`)
+and `openmrs-web` 3/0/0/0. Two of those carry weight beyond their count:
+`ValidateHibernateMappingsDatabaseIT` validates every Hibernate mapping against a schema that Liquibase has
+just built, and `api/src/test/java/org/openmrs/util/DatabaseIT.java` contributes **no** test of its own — it
+is the shared harness base class the five `*DatabaseIT` classes extend, so its zero count is expected rather
+than a silently skipped file.
+
+`performance-test` **also passes** — **3** tests, 0 failures, 0 errors, 2 pre-existing `@Disabled` skips
+(the Platform and O3 comparisons, which upstream disabled because those distributions do not yet run on
+openmrs-core 3.0.0). An earlier acceptance campaign could not reach a comparison and recorded the blockage
+as item **P5-3** of the Acceptance-Campaign Findings Register; that item's *symptom* was accurate but its
+conclusion — that the profile is "as configured, not executable" — is **withdrawn here as disproven**, and
+the register entry is corrected accordingly. The cause is entirely environmental and is now understood
+precisely:
+
+- `StartupPerformanceIT` bind-mounts `Files.createTempDirectory("test")` at `/openmrs/data`. Java always
+  creates that directory with mode **0700**, owned by the JVM's own user, and there is no API surface on
+  `createTempDirectory` to widen it.
+- `docker image inspect openmrs/openmrs-core:2.9.x --format '{{.Config.User}}'` returns **1001**, so the
+  image's entrypoint cannot write a root-owned 0700 directory. Reproduced directly, the container prints
+  `rm: cannot remove '/openmrs/data/modules': Permission denied` and exits **1** within 250 ms.
+- The GitHub Actions runner user *is* uid 1001, which is why the profile is green in CI and red under a
+  root-owned local build. **The test is correct; only the invoking user was wrong.**
+
+Running the Surefire fork as uid 1001 — Surefire's `jvm` parameter pointed at a wrapper that `exec`s
+`setpriv --reuid=1001 --regid=1001 --groups <uid>,<docker gid>` before the real `java` — makes it pass with
+**no change to any repository file**. Two mechanics are worth recording for anyone repeating it: Surefire
+rejects a `jvm` path whose filename is not `java`, and it *exports* `JAVA_HOME` pointing at the wrapper's own
+parent directory, so a wrapper that resolves `${JAVA_HOME}/bin/java` re-enters itself recursively and the
+second invocation, already unprivileged, fails in `setpriv`. The wrapper must therefore name itself `java`
+and hardcode the real JDK path.
+
+The measured comparison, with **the locally built `webapp/target/openmrs.war` injected** into the "to"
+container at `/openmrs/distribution/openmrs_core/openmrs.war`:
+
+| Image | Install / upgrade | Three timed starts | Mean |
+|---|---|---|---|
+| `openmrs/openmrs-core:2.9.x` (from) | installed in 23,069 ms | 15,859 / 17,031 / 15,807 ms | **16,232 ms** |
+| `openmrs/openmrs-core:3.0.x` (to, carrying this build's WAR) | upgraded in 17,900 ms | 17,030 / 15,574 / 17,029 ms | **16,544 ms** |
+
+**2% (312 ms) slower**, against an allowance of `diffInPercent` 10% plus the harness's own 15% run-to-run
+tolerance — comfortably inside it. Because the "to" container runs the WAR built from this change set, that
+run doubles as runtime evidence: the 141 MB artifact booted in Tomcat against a real MariaDB **four**
+separate times and served `/openmrs/health/started` on each.
+
+No figure elsewhere in this document depends on either profile, so nothing above is revised by these two
+results; they extend the evidence rather than correct it. The one correction they force is to P5-3 itself.
 
 ## Section (f): Test-Infrastructure Adaptations
 
@@ -2573,7 +2669,7 @@ and that is a measurement rather than an assurance.
 | **P4-3, P4-4, DS-0029** | this register only | `Dockerfile`, `docker-compose*.yml` and the container lifecycle appear nowhere in §0.2.1 — §0.5.4.4 states positively that the CI and container definitions **require no change** — and TR7 permits exactly one file to be created and names it |
 | **P5-1** | this register only | `test-suite/module/omod/pom.xml` is a **REFERENCE** file in §0.4.1.8 Group 8: inspected under Rules 2 and 3, confirmed to carry no javax-generation coordinate, and not modified. Re-phasing a plugin execution has no target-stack attribution |
 | **P5-2** | this register only | the exclusion lives in `web/pom.xml`, which this change *does* edit — but only to remove two dependencies. Widening the test corpus is not attributable under TR1, and §0.10.3.2 makes the position sharper still: the corpus gate is **5,106 / 0 / 0 / 45** with zero permissible exclusions *and* zero permissible new failures, so admitting seven currently-erroring tests would break the gate this change is measured by. The tests themselves are frozen test source (§0.2.2.2) |
-| **P5-3** | this register only | `StartupPerformanceIT` appears nowhere in §0.2.1, and §0.2.2.4 places the `performance-test` profile outside this work explicitly: documented with its invocation, **not executed** |
+| **P5-3** | this register only, now marked **CLOSED** | `StartupPerformanceIT` appears nowhere in §0.2.1, so no site comment was ever permissible — and none is needed: the item was closed by diagnosis rather than by repair. The profile passes once the Surefire fork runs as uid 1001, with no repository file changed |
 | **P5-4, P5-5** | this register only | the scheduler bootstrap and `ModuleFileParser` appear nowhere in §0.2.1; neither is attributable to the target stack |
 | **P6-1** | this register only | the only file under `test-suite/module/omod` this change may touch is `webModuleApplicationContext.xml`, and only for its XSD version pins (§0.4.1.3). `config.xml`, the activator and the controller are absent from §0.2.1, and making an unreachable route reachable is a **feature addition**, excluded by §0.2.2.1 |
 | **P6-2** | this register only | Rule 4 freezes the DAO layer and authorises **exactly one** edit inside it — the `DbSession.createCriteria` javadoc — and §0.9.2 is decisive on the rest: a repair changes what `UserService.getUsers` returns for a paginated call, which is the one outcome the plan forbids regardless of a green build. Subsection 7 sets this out in full |
@@ -2593,10 +2689,10 @@ row is recorded rather than repaired.
 
 | ID | Severity | Site | Measured condition | Attributable? / plan ground |
 |---|---|---|---|---|
-| P4-1 | Major | `checkstyle.xml` (`LineLength` nested under `TreeWalker`); root `pom.xml` `pluginManagement` | the gate is **both broken and unbound**, and both halves were re-measured here. Invoked directly, `maven-checkstyle-plugin:3.6.0:check` on `openmrs-api` exits **1** with `Failed during checkstyle configuration: cannot initialize module TreeWalker - TreeWalker is not allowed as a parent of LineLength` — `LineLength` became a `Checker` child in Checkstyle 8.24 and is no longer accepted under `TreeWalker`. Invoked normally, it never runs at all: `maven-checkstyle-plugin` occurs in **exactly one** place in the whole reactor, inside root `pluginManagement`, with **no `<executions>`**, so the lifecycle executes it **zero** times. Section (a).2 already records the second half in its unvalidated-plugin table | **No** — §0.9.6, §0.4.1.8, TR1 |
+| P4-1 | Major | `checkstyle.xml` (`LineLength` nested under `TreeWalker`, and four removed properties); root `pom.xml` `pluginManagement` | the gate is **both broken and unbound**, and both halves were re-measured here. Invoked directly, `maven-checkstyle-plugin:3.6.0:check` on `openmrs-api` exits **1** with `Failed during checkstyle configuration: cannot initialize module TreeWalker - TreeWalker is not allowed as a parent of LineLength` — `LineLength` became a `Checker` child in Checkstyle 8.24 and is no longer accepted under `TreeWalker`. That is the **first** of **five** independent incompatibilities with the Checkstyle **9.3** the plugin actually resolves, established by repairing them one at a time until the tool ran: after `LineLength`'s parent, `LeftCurly.maxLineLength`, `JavadocMethod.scope`, `JavadocMethod.allowMissingThrowsTags`, `JavadocMethod.allowThrowsTagsForSubclasses` and `JavadocMethod.minLineCount` are all properties that no longer exist. Invoked normally, it never runs at all: `maven-checkstyle-plugin` occurs in **exactly one** place in the whole reactor, inside root `pluginManagement`, with **no `<executions>`**, so the lifecycle executes it **zero** times. Section (a).2 already records the second half in its unvalidated-plugin table. **Linted anyway, with a corrected config held outside the repository:** standalone Checkstyle 9.3 was run over the five modified `.java` files at both `3934d8086` (materialised with `git show`, no checkout) and the changed tree — **54 findings before, 56 after**, a delta of exactly **+2** `JavadocParagraph` warnings in `StringEnumType.java` arising from the `<p>` that opens its new Rule 5 paragraph. That delta is **not removable and not a defect**: writing the text inline as `<p>NOTE …` was tried, and `spotless:apply` — which runs the Eclipse formatter at `process-sources` on *every* build with `comment.format_javadoc_comments` and `comment.format_html` both true — **rewrote it straight back** to `<p>` on its own line, leaving the file byte-identical to the committed bytes. The convention is machine-enforced, `DbSession.java` alone already carries 24 findings from 12 identical breaks at the base commit, and the `<p>` break is load-bearing besides: without it the formatter reflows the 99-column line above it, which must stay byte-identical | **No** — §0.9.6, §0.4.1.8, TR1 |
 | P5-1 | Major | `test-suite/module/omod/pom.xml`, the `maven-dependency-plugin:unpack-dependencies` execution bound at `generate-resources` | `./mvnw clean test` reaches **5,105** passing tests and then fails in `openmrs-test-suite-module-omod` with **MDEP-98**: the execution unpacks `${project.parent.artifactId}-api`, which at the `test` phase of a clean reactor has not been packaged yet. A preceding `package`/`install` supplies the artifact, which is why the corpus figure is reproducible with the two-command sequence this document has always used and is **not** reproducible from `mvn clean test` alone. The `install` step of gate A8 is therefore load-bearing, not incidental | **No** — §0.4.1.8 REFERENCE, TR1 |
 | P5-2 | Major | `web/pom.xml` Surefire `<exclude>**/test/*</exclude>`; `web/src/test/java/org/openmrs/web/test/WebModuleActivatorTest.java` | the pattern removes the classes sitting **directly** in package `org.openmrs.web.test` from the default corpus — `WebModuleActivatorTest` among them, which carries **7** `@Test` methods (counted in the file). Forced into an isolated run they produce **7 tests / 7 errors**, because the Anonymous role fixture the module install/start/stop/upgrade path needs is absent; run together they additionally collide over JobRunr tables. The classes one level deeper, `org.openmrs.web.test.jupiter.Base*ContextSensitiveTest`, are **not** matched by that pattern and are the harness the rest of `web` runs on | **No** — TR1, §0.10.3.2, §0.2.2.2 |
-| P5-3 | Major | `test-suite/performance/src/test/java/org/openmrs/StartupPerformanceIT.java` | `./mvnw verify -Pperformance-test` never reaches a comparison: the baseline container exits because a **root-owned mode-0700** temporary directory is mounted at `/openmrs/data` while the image runs as **uid 1001**. A `chmod 0777` diagnostic clone reached `started=200` in 29 s, so the harness works and the mount does not. No throughput number is produced by the official profile in either direction — which is exactly why §0.2.2.4 documents that profile rather than quoting it, and why section (e).6 quotes **no** performance figure from it | **No** — §0.2.2.4, site absent from §0.2.1, TR1 |
+| P5-3 **(CLOSED — not a repository defect)** | was Major | `test-suite/performance/src/test/java/org/openmrs/StartupPerformanceIT.java` | **Symptom as originally measured:** the baseline container exits because a **root-owned mode-0700** temporary directory is mounted at `/openmrs/data` while the image runs as **uid 1001**, so `./mvnw -Pperformance-test` reached no comparison. **Diagnosis completed and the item closed:** `Files.createTempDirectory` unconditionally creates mode 0700 owned by the JVM's user, and `openmrs/openmrs-core:*` declares `USER 1001`, so the mount is unwritable **only when the build runs as a different user** — the GitHub Actions runner is itself uid 1001, which is why CI is green. Running the Surefire fork as uid 1001 (`jvm` -> a wrapper that `exec`s `setpriv --reuid=1001 --regid=1001 --groups …`) makes the profile pass with **no repository change**: **3 run / 0 failures / 0 errors / 2 pre-existing skips**, measuring 2.9.x at a 16,232 ms mean against 3.0.x carrying this build's WAR at 16,544 ms — **2% (312 ms) slower**, inside the 10% + 15% allowance. The earlier conclusion that the profile is "as configured, not executable" is therefore **withdrawn**; section (e).6 now carries the measured figures | **No change made or needed** — the test and the repository are correct; the constraint was the invoking user's uid |
 | P5-4 | Minor | scheduler/ShedLock bootstrap ordering under the H2 test profile | the **passing** suite emits errors it does not fail on, because scheduling starts before the H2 `shedlock` table exists: `INSERT INTO shedlock(...)` raises `BadSqlGrammarException`, ShedLock logs `JdbcTemplateStorageAccessor.insertRecord() … Unexpected exception`, and Spring's `TaskUtils$LoggingErrorHandler` logs `Unexpected error occurred in scheduled task`. The **kind** is deterministic; the **count is not**, and this register says so rather than quoting one number as if it were: the campaign counted **29 + 29**, and a re-run while writing this row counted **78 + 78** — one lock-provider error paired with one scheduled-task error each time — because the total depends on how many scheduler ticks fall before the table exists. Both runs still reported **5,106 / 0 / 0 / 45**. Log noise inside a green run is the worst place for a real fault to hide, which is why it is registered rather than shrugged at | **No** — site absent from §0.2.1, TR1 |
 | P5-5 | Minor | `api/src/main/java/org/openmrs/module/ModuleFileParser.java` | temporary `moduleUpgrade*.omod` archives, including **zero-byte** ones, survive the tests that create them and can break a later context with `ZipException` or a missing mapping. Corrupt-input probing reconfirmed the creation path and cleaned up after itself | **No** — site absent from §0.2.1, TR1 |
 
@@ -2906,8 +3002,20 @@ jar is used.
   #               test-suite-module-omod 1/0/0/0
   #   -Pskip-default-test is required: both profiles ADD a test-phase Surefire
   #   execution without disabling default-test, so omitting it re-runs all 5,106
-  ./mvnw verify -Pintegration-test -Pskip-default-test -B   # documented, NOT executed here
-  ./mvnw verify -Pperformance-test -Pskip-default-test -B   # documented, NOT executed here
+  ./mvnw test -Pintegration-test -Pskip-default-test -B
+  #   EXECUTED: 112 run / 0 failures / 0 errors / 3 pre-existing skips
+  #   (openmrs-api 100/0/0/3 for **/*IT.java, openmrs-api 9/0/0/0 for **/*DatabaseIT.java,
+  #    openmrs-web 3/0/0/0). Needs Docker: the ITs use Testcontainers.
+  ./mvnw test -Pperformance-test -Pskip-default-test -B
+  #   EXECUTED: 3 run / 0 failures / 0 errors / 2 pre-existing @Disabled skips.
+  #   Needs Docker AND a fork running as uid 1001 - StartupPerformanceIT mounts a
+  #   Files.createTempDirectory (always mode 0700, owned by the JVM's user) at
+  #   /openmrs/data while the openmrs-core image declares USER 1001. CI is green
+  #   because the GitHub Actions runner IS uid 1001; a root-owned build needs
+  #     -Djvm=<wrapper named exactly "java" that execs
+  #             setpriv --reuid=1001 --regid=1001 --groups 1001,<docker gid> -- <real java>>
+  #   Note the wrapper must hardcode the JDK path: Surefire exports JAVA_HOME
+  #   pointing at the wrapper's own parent directory. See section (e).6.
 
   # V3 - clean-database Liquibase run and mysqldump --no-data diff
   #      EXECUTED. Both sides installed by liquibase-core 4.32.0 into their OWN disposable,
@@ -3432,6 +3540,91 @@ server round-trips are individually present in the access log. Second, the day's
 not under test here. They are outside this document's scope, are not caused by anything this change touches,
 and are recorded only so that the log audit is not presented as cleaner than it is.
 
+### 5. The Run Sequence, in the Order It Was Executed
+
+Subsections 1 and 2 verify the *change*; this one records how the *application* is built, started and
+exercised, because "it compiles and the tests pass" is not the same claim as "it runs". Every command below
+was executed in this order and its stated result observed. Two environment facts are load-bearing and are
+given first, because omitting either turns a passing sequence into a failing one.
+
+**Environment.** `export MAVEN_OPTS=-Xmx1536m` before every Maven command — the host carries 3.8 GiB and
+Surefire forks with `-Xmx1g`, so the default is not safe. Leave **`CI` unset** for ordinary builds: setting
+it activates the `ci-checks` profile, which flips Spotless from `apply` to check-only. Set `CI=true` *only*
+for the parity gate in step 8. And keep every scratch artifact **outside the working tree**: a QA tree left
+inside the repository puts 106 `Missing header` findings into `license:3.0:check` and fails step 8, which is
+how that gate was first observed to fail.
+
+```bash
+#---- 1. Build. 13 of 13 reactor projects; produces webapp/target/openmrs.war (~141 MB).
+export MAVEN_OPTS=-Xmx1536m
+./mvnw -B clean install -DskipTests          # exit 0, BUILD SUCCESS, 13/13
+
+#---- 2. Unit corpus. The install above is a PRECONDITION, not a convenience: `clean test`
+ #        alone stops at 5,105 with MDEP-98 (register item P5-1).
+./mvnw -B test                               # 5,106 run / 0 failures / 0 errors / 45 skipped
+
+#---- 3. The other two profiles. `-Pskip-default-test` prevents running the corpus twice.
+./mvnw -B test -Pintegration-test -Pskip-default-test    # 112 run / 0 / 0 / 3 skipped
+ #        The performance profile needs the Surefire fork to run as uid 1001 (register item
+ #        P5-3). Build the wrapper OUTSIDE the repository. Three constraints are load-bearing:
+ #        the file MUST be named `java` (Surefire rejects any other basename); it MUST hardcode
+ #        the real JDK path, because Surefire re-exports JAVA_HOME to the wrapper's own parent
+ #        and a relative launch recurses forever; and `--groups` MUST be explicit, because
+ #        `--init-groups` fails EPERM in this namespace.
+WRAPPER=$(mktemp -d)/uid1001-jdk && mkdir -p "$WRAPPER/bin"
+printf '%s\n%s\n' '#!/bin/sh' \
+  'exec setpriv --reuid=1001 --regid=1001 --groups 1001,993 -- \
+     /usr/lib/jvm/java-21-openjdk-amd64/bin/java "$@"' > "$WRAPPER/bin/java"
+chmod 755 "$WRAPPER/bin/java"
+ #        uid 1001 must be able to traverse to the local repository and read it:
+chmod a+rx /root /root/.m2 && chmod -R a+rX /root/.m2/repository
+umask 000
+MAVEN_OPTS=-Xmx1024m ./mvnw -B test -Pperformance-test -Pskip-default-test \
+       -pl test-suite/performance -Djvm="$WRAPPER/bin/java"   # 3 run / 0 / 0 / 2 skipped
+
+#---- 4. Deploy the WAR that step 1 just built, onto Tomcat 11 against MariaDB 10.11.7.
+ #        Verify the DEPLOYED bytes are the ones just built - do not assume it:
+docker start omrs-db && docker start omrs-app
+docker exec omrs-app md5sum /usr/local/tomcat/webapps/openmrs.war
+md5sum webapp/target/openmrs.war             # the two digests must match
+
+#---- 5. Prove it is serving. Startup was observed at "Server startup in [16441] milliseconds".
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/openmrs/health/started   # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/openmrs/health/alive     # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/openmrs/csrfguard        # 200
+ #        Static content routed through the MODIFIED openmrs_static_content-servlet.xml:
+curl -s -o /dev/null -w '%{http_code}\n' \
+     http://localhost:8080/openmrs/images/openmrs_logo_white.gif                        # 200
+ #        `/openmrs/` and `/openmrs/index.htm` answer 404 BY DESIGN - core ships no UI.
+docker logs omrs-app 2>&1 | grep -cE 'ERROR|SEVERE|FATAL|BeanCreationException'         # 0
+
+#---- 6. Self-contained alternative, no Docker and no external database:
+./mvnw -pl webapp -Pinstall-h2 package cargo:run     # embedded Tomcat 11 + H2, admin/Admin123
+
+#---- 7. The liquibase module's runnable entrypoint. It is deliberately NON-idempotent and
+ #        consumes a RAW generated snapshot, not the committed tuned ones (see section (e).2):
+cd liquibase && ../mvnw -B liquibase:generateChangeLog     # raw snapshot from a live database
+java -jar target/openmrs-liquibase-3.0.0-SNAPSHOT-jar-with-dependencies.jar   # exit 0
+
+#---- 8. The CI-parity gate, exactly as .github/workflows/build.yaml runs it on Java 21.
+ #        `CI=true` is REQUIRED here: it is what makes Spotless check-only and enables
+ #        license:3.0:check. `spotbugs.skip=false` is what the workflow's ternary evaluates to.
+CI=true ./mvnw clean install -DskipTests=true -D"maven.javadoc.skip"=true \
+        -D"spotbugs.skip"=false --batch-mode --show-version --file pom.xml   # exit 0
+
+#---- 9. Leave the environment as it was found.
+docker stop omrs-app
+```
+
+**What step 8 asserts, measured rather than claimed.** Exit **0**, `BUILD SUCCESS`, **13 of 13** `SUCCESS`;
+Spotless ran **check-only** in 12 projects and `apply` was skipped in all 12 (`openmrs-bom` reports
+`Spotless check skipped` for its own `<skip>true</skip>` reason), reporting
+1185 + 68 + 8 + 9 + 2 + 1 = **1,273** `.java` files clean and **0** needing changes;
+`license:3.0:check` ran with **0** `Missing header` findings; and SpotBugs genuinely executed, summing
+`BugInstance size is …` to **309** — **284** `Medium` + **25** `High`, with **zero** `[ERROR]` lines that
+are not one of those findings. That 309 is the pre-existing baseline unchanged, which is the regression
+signal that matters: this change adds no finding.
+
 ## Definition of Done
 
 Each box below cites the value that was measured, not merely the fact that a check was run. Where an earlier
@@ -3452,6 +3645,15 @@ revision of this list asserted an outcome in the abstract, the number that settl
       rewrites it** — it is the Jakarta descriptor completion of §0.2.1.3, not a test. Naming the pathspec
       is the point; a reader who widened it and found 1 would otherwise have caught this document in an
       apparent contradiction. The 45 is a ceiling, and it held.
+- [x] The **other two test profiles are executed and green as well**, so no suite anywhere in the reactor is
+      left untested or blocked. `-Pintegration-test -Pskip-default-test` reports **112 run / 0 failures /
+      0 errors / 3 pre-existing skips** across 11 `*IT` classes on Testcontainers, `ValidateHibernateMappingsDatabaseIT`
+      among them — which validates every Hibernate mapping against a schema Liquibase has just built.
+      `-Pperformance-test -Pskip-default-test` reports **3 run / 0 failures / 0 errors / 2 pre-existing
+      `@Disabled` skips**, once the Surefire fork runs as uid 1001 for the reason set out in section (e).6;
+      it measures **2% (312 ms)** against an allowance of 10% + 15%. Across all three profiles the totals are
+      **5,221 run / 0 failures / 0 errors / 50 skipped**, and every one of those 50 skips is a pre-existing
+      `@Disabled`. The earlier finding that the performance profile was "not executable" is **withdrawn**.
 - [x] `./mvnw dependency:tree -B` shows **zero `javax.*` dependency-tree nodes** — not merely zero
       `servlet` and `persistence` nodes — across all **1,620** lines of output.
 - [x] `grep -rE "import javax\.(servlet|persistence|validation|annotation|transaction)"` returns zero hits,
@@ -3541,7 +3743,13 @@ revision of this list asserted an outcome in the abstract, the number that settl
       is what caught a real asymmetry in an earlier revision of the script, where the two sides ran with
       different classpath roots and their logs diverged by 135 lines. The runnable script — no credential in argv, fail-closed creation
       under an `flock`, an idempotent `EXIT`-only cleanup that owns only what it created, and `INT`/`TERM`
-      handlers that exit 130/143 — and the retained evidence files are in section (e).4.
+      handlers that exit 130/143 — and the retained evidence files are in section (e).4. A second,
+      **independent** execution widened the scope to the full clean-install sequence (`schema-only` then
+      `core-data` then `update-to-latest`) and reached the same verdict from different numbers —
+      **119 tables / 1,064 changesets** per side, dumps of **3,420 lines** with the **same SHA-256**,
+      identical both normalised and raw — and additionally compared the two schemas straight out of
+      `information_schema`: **1,541** column rows, **710** index rows and **693** `key_column_usage` rows,
+      **all three sets identical**. Section (e).1 reconciles the two runs' figures.
 
 ## Further Reading
 
