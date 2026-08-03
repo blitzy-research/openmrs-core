@@ -80,8 +80,6 @@
 		<commonsIoVersion>2.21.0</commonsIoVersion>
 		<commonsLang3Version>3.20.0</commonsLang3Version>
 		<commonsBeanutilsVersion>1.11.0</commonsBeanutilsVersion>
-		<commonsFileuploadVersion>1.6.0</commonsFileuploadVersion>
-		<commonsFileupload2JakartaVersion>2.0.0-M5</commonsFileupload2JakartaVersion>
 		<commonsValidatorVersion>1.10.1</commonsValidatorVersion>
 
 		<!-- Velocity -->
@@ -112,7 +110,6 @@
 		<!-- Other Runtime -->
 		<javassistVersion>3.31.0-GA</javassistVersion>
 		<reflectionsVersion>0.10.2</reflectionsVersion>
-		<groovyVersion>2.4.21</groovyVersion>
 		<tomcatVersion>11.0.21</tomcatVersion>
 		<jodaTimeVersion>2.14.1</jodaTimeVersion>
 		<guavaVersion>33.6.0-jre</guavaVersion>
@@ -379,16 +376,6 @@
 				</exclusions>
 			</dependency>
 			<dependency>
-				<groupId>commons-fileupload</groupId>
-				<artifactId>commons-fileupload</artifactId>
-				<version>${commonsFileuploadVersion}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.apache.commons</groupId>
-				<artifactId>commons-fileupload2-jakarta-servlet6</artifactId>
-				<version>${commonsFileupload2JakartaVersion}</version>
-			</dependency>
-			<dependency>
 				<groupId>commons-validator</groupId>
 				<artifactId>commons-validator</artifactId>
 				<version>${commonsValidatorVersion}</version>
@@ -537,6 +524,10 @@
 						<groupId>ch.qos.logback</groupId>
 						<artifactId>logback-classic</artifactId>
 					</exclusion>
+					<exclusion>
+						<groupId>javax.xml.bind</groupId>
+						<artifactId>jaxb-api</artifactId>
+					</exclusion>
 				</exclusions>
 			</dependency>
 			<dependency>
@@ -584,11 +575,6 @@
 				<groupId>org.reflections</groupId>
 				<artifactId>reflections</artifactId>
 				<version>${reflectionsVersion}</version>
-			</dependency>
-			<dependency>
-				<groupId>org.codehaus.groovy</groupId>
-				<artifactId>groovy-all</artifactId>
-				<version>${groovyVersion}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.tomcat</groupId>

@@ -16,8 +16,6 @@ The following dependencies are licensed under the [Apache License, Version 2.0](
 
 - Apache Commons BeanUtils (`commons-beanutils:commons-beanutils`)
 - Apache Commons Collections (`commons-collections:commons-collections`)
-- Apache Commons FileUpload (`commons-fileupload:commons-fileupload`)
-- Apache Commons FileUpload2 (`org.apache.commons:commons-fileupload2-jakarta-servlet6`)
 - Apache Commons IO (`commons-io:commons-io`)
 - Apache Commons Lang (`org.apache.commons:commons-lang3`)
 - Apache Commons Validator (`commons-validator:commons-validator`)
@@ -28,7 +26,6 @@ The following dependencies are licensed under the [Apache License, Version 2.0](
 - Apache Velocity Tools (`org.apache.velocity.tools:velocity-tools-generic`)
 - AWS SDK for Java (`software.amazon.awssdk:s3`)
 - Google Guava (`com.google.guava:guava`)
-- Groovy (`org.codehaus.groovy:groovy-all`)
 - Hibernate ORM (`org.hibernate.orm:hibernate-core`, `hibernate-c3p0`, `hibernate-envers`)
 - Hibernate Search (`org.hibernate.search:hibernate-search-mapper-orm`, `hibernate-search-backend-lucene`, `hibernate-search-backend-elasticsearch`)
 - Hibernate Validator (`org.hibernate.validator:hibernate-validator`)

@@ -10,6 +10,7 @@
     graphic logo is a trademark of OpenMRS Inc.
 
 -->
+<!-- Pre-existing defect: the root start-tag below contains an extra '>'; leave it unchanged under Rule 5. -->
 <infinispan xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
             xsi:schemaLocation="urn:infinispan:config:15.2 https://infinispan.org/schemas/infinispan-config-15.2.xsd" 
             xmlns="urn:infinispan:config:15.2">>

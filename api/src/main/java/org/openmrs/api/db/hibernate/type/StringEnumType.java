@@ -33,6 +33,12 @@ import org.hibernate.usertype.EnhancedUserType;
  * </property>
  * }</pre> NOTE: This class should be deleted once Obs, ConceptName, and OrderSet are migrated from
  * hibernate xml mapping files to annotations.
+ * <p>
+ * NOTE (pre-existing, documented not fixed): the deletion precondition above is only partly
+ * satisfied. ConceptName has no HBM mapping file and is mapped with annotations, but Obs and
+ * OrderSet still are HBM-mapped. Annotation mapping alone does not remove the need for this type
+ * either: the annotated ConceptName still applies it with Hibernate's {@code @Type} annotation.
+ * This class must therefore be retained.
  */
 @SuppressWarnings({ "rawtypes", "unchecked" })
 public class StringEnumType implements EnhancedUserType<Enum>, DynamicParameterizedType {
