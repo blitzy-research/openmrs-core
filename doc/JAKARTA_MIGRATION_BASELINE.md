@@ -531,8 +531,21 @@ all landing in the same change. The mechanical consequence of omitting any one i
 
 All four edits landed for all three coordinates. Post-change verification: the coordinates appear in
 **no** POM in the reactor, in **no** dependency-tree node, and in **no** `NOTICE.md` line, while the
-attributions that must survive — `commons-collections`, `liquibase-core`, the Infinispan entries,
-`jakarta.xml.bind-api`, `jaxb-runtime` and `type-converter` — are all still present.
+**`NOTICE.md` attributions** that must survive — `commons-collections`, `liquibase-core`, the Infinispan
+entries, `jakarta.xml.bind-api`, `jaxb-runtime` and `type-converter` — are all still present, each on at
+least one line of that file.
+
+That surviving-attribution check is deliberately scoped to `NOTICE.md`, because presence in the attribution
+file and presence in the resolved graph are different questions and one of the six answers them differently.
+Five of the six also resolve to dependency-tree nodes; **`type-converter` resolves to none, and should not**.
+`org.openmrs.liquibase.ext:type-converter:1.0.1` is declared exactly once — in `bom/pom.xml`'s
+`dependencyManagement`, at the coordinates a downstream distribution consumes — and by **no** reactor
+module, so it contributes **0** nodes to `dependency:tree` while holding exactly **1** `NOTICE.md` line.
+Measured on the post-change tree: `type-converter` occurs in **1** POM (`bom/pom.xml`), **0** times in the
+1,620-line dependency tree, and **1** time in `NOTICE.md`. A reader who took the surviving-attribution list
+as a *graph* claim would therefore be reading a false statement; the plan itself classifies this coordinate
+as "BOM-only: declared by no reactor module and absent from the resolved graph" (§0.2.2.3), and this
+document now says so wherever the list appears.
 
 The footprints above are checkable by arithmetic rather than by inspection alone, which is why every carrier
 is enumerated in full. The base-commit `dependency:tree` is **1,641** lines and the post-change tree is
@@ -915,6 +928,28 @@ the script in (e).4, which is the exact script that produced them.
 
 **`diff` exited 0 with zero differing lines**, and `cmp` reports the two dumps **byte-identical**.
 
+**Re-executed from this document, verbatim, after the transport knob was added.** An earlier revision of the
+script left the client's TLS mode to its default, which made the block **unrunnable as written on a MariaDB
+11.4-or-later client** — the defect and its correction are set out in (e).3. Because a procedure nobody can
+run is not evidence, the corrected block was not merely reasoned about: the fenced script was extracted from
+this file by line range, checked with `bash -n`, and run end-to-end with nothing but `DB_PASS` exported and
+`DB_TLS` left at its default. It printed
+`PASS: schemas identical, and every resource this run created was released` and exited **0** under run
+identifier **`df651aa71add`**, and **every figure in the table above reproduced exactly** — the same
+`tables 119 / columns 1510 / indexes 697 / fkeys 446 / changesets 1028` on both sides, the same **119**
+`CREATE TABLE` statements, the same **3,389** lines and **175,156** bytes per dump, and the same MD5
+**`659f521033a44a4b95e57fe0bbe105a9`** across all four dump files. The three comparisons that make the run
+an assertion rather than a report were all empty as well — `schema.diff` **0** lines, `engine-log.diff`
+**0** lines over **1,169** lines and **1,028** `Running Changeset:` entries per side with the same **116**
+primary-key warnings, and `changelogs-fileset.diff` **0** lines behind
+`38 files compared, 0 differing` and `38 files copied from the working tree, 0 differing`. The shared
+`openmrs` database read **126 / 1065** before and after, `created-databases.txt` and `cleanup.log` agree on
+the two names created and dropped, `/dev/shm` held no credential directory afterwards, and
+`information_schema.schemata` held **0** `openmrs_v3_%` databases. Two negative controls confirm the knob
+is load-bearing rather than decorative: `DB_TLS=bogus` aborts before any resource exists, and
+`DB_TLS=require` against this plain-TCP fixture fails **closed** at the first connection with exit **1**,
+reproducing the client's own `ERROR 2026` text and naming the setting — it does not silently downgrade.
+
 Each figure above was read back out of a named file rather than transcribed from a terminal, so none of them
 rests on recollection. Every value in the table above and the one below was verified against these files
 twice: once when the run finished, and again during the final validation sweep. The directory has since been
@@ -947,6 +982,7 @@ description of what a re-run produces rather than a path you can list today. Re-
 | `liquibase-update-before.log`, `liquibase-update-after.log` | the two engine logs, **1,169 lines each**, each with 1,028 `Running Changeset:` lines and the same **116** `Name 'PK_…' ignored for PRIMARY key.` warnings, each ending `Total change sets: 1028` and `Liquibase: Update has been successful. Rows affected: 1028` |
 | `api-runtime-classpath.txt` | the resolved `api` runtime classpath the engine-version check reads |
 | `base-changelogs/` | the `git archive` extraction of the base-commit changelog bytes |
+| `connect.err` | the first connection's stderr — **empty (0 bytes)** on a healthy run, and the text the transport diagnostic quotes back when it is not. Added with the `DB_TLS` knob, so a run of the pre-correction script does not produce it |
 
 One precision that matters, because the obvious worry about comparing two differently-named databases is
 that a normalisation step could hide a real difference: **no normalisation was needed.** A single-database
@@ -1018,6 +1054,22 @@ as `mariadb-dump`, or as `mysqldump` via the compatibility symlink. `initial_tes
 into `/docker-entrypoint-initdb.d/` by uncommenting the relevant line in `docker-compose.override.yml`,
 but **a clean-database run requires that mount to stay disabled** — it is commented out by default, which
 was verified.
+
+**The client's TLS default is a version-dependent trap, so the script does not rely on it.** That
+`mariadb:10.11.7` fixture is started with no TLS material, while a MariaDB client from **11.4 onward
+requires TLS by default and fails closed instead of falling back to plain TCP**. The two together are a
+guaranteed failure at the first connection, and it is a failure of *configuration*, not of the comparison:
+with a **MariaDB 11.8.3** client — the version present here — a `[client]` group carrying only `user`,
+`password`, `host` and `port` produces
+`ERROR 2026 (HY000): TLS/SSL error: SSL is required, but the server does not support it` from `mysql`
+(status **1**) and the same diagnostic from `mysqldump` (status **2**). Neither `~/.my.cnf` nor anything
+under `/etc/mysql/` supplies a compensating setting on this host, so nothing ambient rescues it. An earlier
+revision of the script left the transport to the client's default and was therefore **not runnable as
+written on a current client**; that is corrected — `DB_TLS` selects the mode, the default `disable` matches
+the documented fixture, `require` covers a TLS-capable server, and the selected mode is written into both
+the client defaults file and the JDBC URL so the client tools and the Liquibase engine cannot diverge.
+The knob is the only thing that changed: no measurement in section (e).1 depends on it, which is why the
+figures recorded there reproduced exactly when the corrected block was re-executed.
 
 ### 4. The Procedure
 
@@ -1140,8 +1192,8 @@ cannot do so says so out loud.
 > that is disposable. An earlier revision of this document recommended substituting `shred -u` "if a
 > shredding guarantee is required"; that advice was wrong and is **withdrawn**.
 
-Two preconditions decide whether this works at all, so both are stated here rather than left for the
-reader to discover at the first `CREATE DATABASE`:
+Three preconditions decide whether this works at all, so all three are stated here rather than left for
+the reader to discover at the first connection or the first `CREATE DATABASE`:
 
 - **The account must be able to `CREATE DATABASE`.** The documented *application* account
   `openmrs`/`openmrs` **cannot**: it holds `USAGE ON *.*` plus `ALL PRIVILEGES` on a fixed list of
@@ -1153,6 +1205,18 @@ reader to discover at the first `CREATE DATABASE`:
   Liquibase's `--defaultsFile` are written under `umask 077` at mode `600`. The `-u <user> -p<pw>` form that
   looks natural in prose is **not executable**: the shell reads `<user>` and `>` as input/output
   redirection, so the command fails before `mysqldump` ever starts.
+- **The client transport must match the server's, and it is a knob rather than a default.** A modern MariaDB
+  client enables TLS on its own and **aborts instead of downgrading** when the server has none: measured
+  here, a **MariaDB 11.8.3** client against the documented **`mariadb:10.11.7`** fixture — which serves
+  plain TCP — fails at the *first* connection with `ERROR 2026 (HY000): TLS/SSL error: SSL is required, but
+  the server does not support it`, and `mysqldump` fails identically with status **2**. `DB_TLS` therefore
+  selects the transport explicitly: **`disable`** (the default, matching that fixture) writes `skip-ssl`
+  into the `[client]` group and `sslMode=DISABLED` onto the JDBC URL, and **`require`** writes `ssl` and
+  `sslMode=REQUIRED` for a TLS-capable server, which is what a real deployment should be run against. An
+  unrecognised value aborts rather than picking one. Two consequences worth knowing before a run: the mode
+  reaches `mysql`, `mysqldump` **and** the Liquibase engine, so both sides of the comparison use one
+  transport; and because `--defaults-extra-file` is read *before* `~/.my.cnf`, a conflicting `ssl` setting
+  in that user file wins — remove it there rather than overriding it here.
 
 Save the block below to a file and run it; it is the script, not an excerpt of one. Its
 `#!/usr/bin/env bash` line sits **flush left on purpose** — the kernel honours an interpreter directive
@@ -1168,6 +1232,26 @@ remaining lines is this document's own formatting, which the shell ignores.
   SHARED_DB=openmrs                           # READ-ONLY here. Never a DROP/CREATE target.
   : "${DB_PASS:?export DB_PASS before running; no credential is written into this document}"
   : "${HOME:?HOME must be set: the lock lives in a stable owner-only directory, not in TMPDIR}"
+
+  # Transport security is CONFIGURED, not inherited. MariaDB's client library enables TLS by
+  # default from 11.4 onward and ABORTS rather than downgrading when the server does not offer
+  # it: an 11.8.3 client against the documented mariadb:10.11.7 fixture, which serves plain
+  # TCP, fails at the FIRST connection with
+  #   ERROR 2026 (HY000): TLS/SSL error: SSL is required, but the server does not support it
+  # and mysqldump fails the same way with status 2. That is measured on this host, not supposed,
+  # and it is why this setting is written into the defaults file instead of being left to
+  # whichever option files happen to exist. Two named modes, validated fail-closed - an
+  # unrecognised value aborts rather than silently choosing a transport:
+  #   disable  plain TCP. Matches the documented fixture, so it is the default here.
+  #   require  TLS mandatory; the connection fails if the server cannot provide it. This is
+  #            what any real deployment should use. Add ssl-ca / ssl-verify-server-cert to the
+  #            same [client] group when the server certificate must also be verified.
+  DB_TLS="${DB_TLS:-disable}"
+  case "$DB_TLS" in
+    disable) CLIENT_TLS_OPT='skip-ssl'; JDBC_TLS_PARAM='?sslMode=DISABLED' ;;
+    require) CLIENT_TLS_OPT='ssl';      JDBC_TLS_PARAM='?sslMode=REQUIRED' ;;
+    *) printf 'FATAL: DB_TLS must be "disable" or "require", got "%s"\n' "$DB_TLS" >&2; exit 1 ;;
+  esac
 
   # 0. Per-run identity FIRST: both disposable database names, the evidence directory and the
   #    credential directory take their names from it. The lock in step 2 deliberately does NOT -
@@ -1346,8 +1430,12 @@ remaining lines is this document's own formatting, which the shell ignores.
   LB_CNF="$CRED_DIR/liquibase.properties"
   : > "$MYSQL_CNF"; : > "$LB_CNF"
   chmod 600 "$MYSQL_CNF" "$LB_CNF"
-  printf '[client]\nuser=root\npassword=%s\nhost=%s\nport=%s\n' \
-    "$DB_PASS" "$DB_HOST" "$DB_PORT" > "$MYSQL_CNF"
+  # The TLS mode is part of the credential file rather than an argument, for the same reason the
+  # password is: every option that reaches argv is world-readable, and a per-call flag would have
+  # to be repeated at all eight mysql/mysqldump call sites - including the two inside cleanup,
+  # where an omission would strand a disposable database. One [client] line covers all of them.
+  printf '[client]\nuser=root\npassword=%s\nhost=%s\nport=%s\n%s\n' \
+    "$DB_PASS" "$DB_HOST" "$DB_PORT" "$CLIENT_TLS_OPT" > "$MYSQL_CNF"
 
   # 4. A FRESH, per-run, private evidence directory. Plain `mkdir` - no -p - so a stale
   #    directory from an earlier run cannot contaminate this one, and every retained artifact
@@ -1368,10 +1456,21 @@ remaining lines is this document's own formatting, which the shell ignores.
   : > "$EVIDENCE/created-databases.txt"       # what this run actually created, appended as it goes
 
   # 5. Shared database pre-state - READ ONLY. Re-checked identical in step 10.
+  #    This is also the FIRST connection the run makes, so it is where a credential or a
+  #    transport mismatch surfaces. Reproduce the client's own message and name the knob:
+  #    a bare "cannot read the shared database pre-state" sends the reader looking for a
+  #    missing table when the actual cause is one setting.
   if ! mysql --defaults-extra-file="$MYSQL_CNF" -N -B -e \
     "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$SHARED_DB'), \
-            (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" > "$EVIDENCE/shared-db-before.txt"
-  then printf 'FATAL: cannot read the shared database pre-state\n' >&2; exit 1; fi
+            (SELECT COUNT(*) FROM $SHARED_DB.liquibasechangelog);" \
+    > "$EVIDENCE/shared-db-before.txt" 2> "$EVIDENCE/connect.err"
+  then
+    printf 'FATAL: cannot read the shared database pre-state. Client reported: %s\n' \
+      "$(tr '\n' ' ' < "$EVIDENCE/connect.err")" >&2
+    printf 'HINT: DB_TLS is "%s". A server serving plain TCP needs DB_TLS=disable; a TLS-only server needs DB_TLS=require. A [client] ssl setting in ~/.my.cnf is read AFTER this defaults file and overrides it, so remove it there rather than fighting it here.\n' \
+      "$DB_TLS" >&2
+    exit 1
+  fi
 
   # 6. Materialise the BASE-COMMIT changelog bytes without touching the working tree.
   mkdir "$EVIDENCE/base-changelogs"
@@ -1462,9 +1561,12 @@ remaining lines is this document's own formatting, which the shell ignores.
     # Credentials AND the target URL are PROPERTIES IN THE MODE-600 DEFAULTS FILE, never
     # command-line options: every argument is world-readable through /proc/<pid>/cmdline.
     # The url property is also what keeps liquibase/pom.xml's shared-database <url> from
-    # being inherited. The changelog table names match DatabaseUpdater.
-    printf 'url=jdbc:mysql://%s:%s/%s\nusername=root\npassword=%s\ndriver=com.mysql.cj.jdbc.Driver\nchangeLogFile=liquibase-schema-only.xml\ndatabaseChangelogTableName=liquibasechangelog\ndatabaseChangelogLockTableName=liquibasechangeloglock\nlogLevel=warning\n' \
-      "$DB_HOST" "$DB_PORT" "$db" "$DB_PASS" > "$LB_CNF"
+    # being inherited. The changelog table names match DatabaseUpdater. The url carries the
+    # sslMode that corresponds to DB_TLS so the engine uses the SAME transport as the client:
+    # Connector/J would otherwise default to PREFERRED and negotiate on its own, which makes
+    # the two sides of this comparison differ in something other than the changelog bytes.
+    printf 'url=jdbc:mysql://%s:%s/%s%s\nusername=root\npassword=%s\ndriver=com.mysql.cj.jdbc.Driver\nchangeLogFile=liquibase-schema-only.xml\ndatabaseChangelogTableName=liquibasechangelog\ndatabaseChangelogLockTableName=liquibasechangeloglock\nlogLevel=warning\n' \
+      "$DB_HOST" "$DB_PORT" "$db" "$JDBC_TLS_PARAM" "$DB_PASS" > "$LB_CNF"
 
     if ! java -cp "$root:$CP" liquibase.integration.commandline.Main \
         --defaultsFile="$LB_CNF" update > "$EVIDENCE/liquibase-update-$label.log" 2>&1
@@ -1687,6 +1789,15 @@ to the `test` phase (`**/*IT.java` and `**/*DatabaseIT.java` for the first, `**/
 the second) without disabling the `default-test` execution, so omitting it re-runs the entire 5,106-test
 default suite ahead of the integration or performance tests. `skip-default-test` sets `skipTests` on the
 `default-test` execution alone, which is what leaves only the profile's own tests running.
+
+**One of the two was later run by someone else, and the result matters here.** A subsequent acceptance
+campaign executed both invocations: `integration-test` **passed** — 112 tests, 0 failures, 0 errors, 3
+pre-existing skips — while `performance-test` **could not reach a comparison at all**, because its baseline
+container exits on a mount permission mismatch (item **P5-3** of the Acceptance-Campaign Findings Register).
+So the honest reading of the second line above is stronger than "not executed here": it is *documented and,
+as configured, not executable*. Nothing in this document quotes a figure from it, which is why that finding
+invalidates no claim made anywhere in this file — but a reader who runs it expecting numbers should know why
+none arrive.
 
 ## Section (f): Test-Infrastructure Adaptations
 
@@ -1930,7 +2041,7 @@ ways, and conflating them would misrepresent both:
   `INFO-1`…`INFO-7`) are kept verbatim so a reader can match a row here to the report it came from. They
   are **not** renumbered into the 1-7 scheme above, and the two schemes do not overlap.
 
-One item does connect the two registers: `INFO-7` names a **second, distinct** defect in
+One item does connect this register to the Rule 5 one above it: `INFO-7` names a **second, distinct** defect in
 `api/src/main/resources/messages.properties` — a missing line terminator, unrelated to the orphaned
 FileUpload keys that are item 6 of the Rule 5 register. Both are in that same file; they are not the same
 defect. Subsection 10 states each precisely.
@@ -2377,6 +2488,244 @@ document could not use on its own. Reported as the campaign's measurements:
   planned with no hit against the changelogs, the HBM mappings, `AOPConfig.java` or `initial_test_db.sql`,
   and the existing `api` authorization and security tests ran with zero failures.
 
+## Acceptance-Campaign Findings Register
+
+A full acceptance campaign was run against this tree after the security campaign above — 33 feature groups,
+20,964 selected automated executions, every one of the 18 items above re-tested, and the deployed runtime
+exercised through HTTP rather than read. Its verdict on the objectives **this change owns** was that
+**G1 through G5 pass**: zero forbidden namespace imports; zero actual `javax.*` dependency-tree nodes, with
+the three removed coordinates absent, exactly six `liquibase-core` carriers and Jakarta JAXB intact; Spring 7
+/ Hibernate 7 / Validator 9 / Servlet 6.1 in place; zero versioned Spring grammars, with all five contexts
+resolving and loading; a valid Jakarta EE 6.0 override descriptor; the exact **5,106 / 0 / 0 / 45** corpus
+reproduced **twice** with identical per-module totals; and the frozen changelogs, HBM mappings and MariaDB
+schema unchanged, the schema comparison coming back empty a second time by a different method.
+
+It also raised **32 findings and one blocked task**. **Two of the 32 were defects in this document**, and
+those two were **repaired rather than registered** — subsection 6 records what they were and where the
+corrections landed. The remaining thirty are recorded here, for the same reason the eighteen above are:
+Rule 5 requires a defect found in passing to be recorded rather than repaired, Rule 6 requires *every* gap to
+be written down, and a finding that is real, measured and declined on plan grounds is precisely what those
+two rules exist to capture. Leaving them in a transient report would make this document quietly incomplete
+on the axis a reader is most likely to check it against.
+
+### 1. Provenance, and Why This Is a Third Register
+
+Three registers now sit in this document, and collapsing them would misrepresent all three. They differ in
+discovery point, not in seriousness:
+
+- The **Pre-Existing Defect Register** is the Agent Action Plan's own seven-item list — defects the plan
+  enumerated by *reading the tree* during scope discovery, five of which it also authorised a site comment
+  for.
+- The **Security and Dependency-Safety Register** is an 18-item security campaign — found by *scanning and
+  probing* a deployed build: SBOM plus vulnerability scanners, HTTP error surfaces, container logs.
+- This register is an **acceptance campaign** — found by *running the product's own lifecycles*: the Maven
+  build and test phases as a user would invoke them, the `integration-test` and `performance-test` profiles,
+  an H2 install-and-restart, a Docker Compose lifecycle, a real OMOD deployment, and paginated service
+  queries against a live database.
+
+Identifiers are the campaign's own — `P4-x`, `P5-x`, `P6-x`, `P7-x`, `P8-x`, `DS-0029`, `B-WEB` — kept
+verbatim so a row here can be matched to the report it came from. They are **not** renumbered into either
+scheme above, and the three schemes do not overlap. Where a row restates an item already registered above
+under a different identifier, subsection 5 of that register keeps the older number and subsection 8 here
+records the mapping rather than duplicating the row.
+
+### 2. Attribution: Every Item Recorded Here Is Pre-Existing, Measured With a Diff
+
+"Pre-existing" is a claim about a diff, so it is settled with one. Every site cited by every item in this
+register was compared against the base commit, and the comparison is **empty**:
+
+```bash
+  # Every site cited by this register. Expect NO output: each file is byte-identical to $BASE.
+  git diff --name-only "$BASE"..HEAD -- \
+    checkstyle.xml pom.xml \
+    Dockerfile docker-compose.yml docker-compose.override.yml startup-init.sh \
+    api/src/main/java/org/openmrs/scheduler/jobrunr/JobRunrSchedulerService.java \
+    api/src/main/java/org/openmrs/scheduler/TaskDefinition.java \
+    api/src/main/java/org/openmrs/module/ModuleFileParser.java \
+    api/src/main/java/org/openmrs/api/db/hibernate/HibernateUserDAO.java \
+    api/src/main/resources/org/openmrs/liquibase/snapshots/schema-only/liquibase-schema-only-2.9.x.xml \
+    test-suite/module/omod/pom.xml \
+    test-suite/module/omod/src/main/resources/config.xml \
+    test-suite/module/api/src/main/java/org/openmrs/module/testmodule/TestModuleActivator.java \
+    test-suite/module/omod/src/main/java/org/openmrs/module/web/controller/TestModuleController.java \
+    test-suite/performance/src/test/java/org/openmrs/StartupPerformanceIT.java \
+    web/src/test/java/org/openmrs/web/test/WebModuleActivatorTest.java
+
+  # web/pom.xml IS edited by this change, so "unchanged" is the wrong test for it. The right
+  # test is that the edit is ONLY the two dependency removals - the Surefire <excludes> block
+  # that item P5-2 cites is untouched.
+  git diff "$BASE"..HEAD -- web/pom.xml | grep -E '^[+-][^+-]'
+  #   measured: exactly 8 removed lines, and they are the two <dependency> elements for
+  #   commons-fileupload and commons-fileupload2-jakarta-servlet6. Nothing added, and no
+  #   <plugin>, <excludes> or <systemPropertyVariables> line appears in the diff at all.
+```
+
+Both blocks were run and both produced the expected result: the first printed **nothing**, and the second
+printed exactly the eight removal lines. So **no item in this register is a regression introduced here**,
+and that is a measurement rather than an assurance.
+
+### 3. Where Each Item Is Recorded, and Why No Site Edit Was Permissible
+
+| Items | How they are recorded | Why no site edit |
+|---|---|---|
+| **P4-1** | this register only | the ruleset `checkstyle.xml` is one of the quality descriptors §0.9.6 states are **not modified**, and the plugin declaration is in the root `pom.xml`, a **verify-only** file whose planned outcome is byte-identical (§0.4.1.8). Binding a Checkstyle execution is a *new build behaviour*, which TR1 refuses outright |
+| **P4-2** | this register only | one half of the site is `scheduler_task_config.uuid CHAR(38)`, inside the **frozen** changelog set (§0.2.2.2, §0.9.2); the other half, `JobRunrSchedulerService`, appears nowhere in §0.2.1 |
+| **P4-3, P4-4, DS-0029** | this register only | `Dockerfile`, `docker-compose*.yml` and the container lifecycle appear nowhere in §0.2.1 — §0.5.4.4 states positively that the CI and container definitions **require no change** — and TR7 permits exactly one file to be created and names it |
+| **P5-1** | this register only | `test-suite/module/omod/pom.xml` is a **REFERENCE** file in §0.4.1.8 Group 8: inspected under Rules 2 and 3, confirmed to carry no javax-generation coordinate, and not modified. Re-phasing a plugin execution has no target-stack attribution |
+| **P5-2** | this register only | the exclusion lives in `web/pom.xml`, which this change *does* edit — but only to remove two dependencies. Widening the test corpus is not attributable under TR1, and §0.10.3.2 makes the position sharper still: the corpus gate is **5,106 / 0 / 0 / 45** with zero permissible exclusions *and* zero permissible new failures, so admitting seven currently-erroring tests would break the gate this change is measured by. The tests themselves are frozen test source (§0.2.2.2) |
+| **P5-3** | this register only | `StartupPerformanceIT` appears nowhere in §0.2.1, and §0.2.2.4 places the `performance-test` profile outside this work explicitly: documented with its invocation, **not executed** |
+| **P5-4, P5-5** | this register only | the scheduler bootstrap and `ModuleFileParser` appear nowhere in §0.2.1; neither is attributable to the target stack |
+| **P6-1** | this register only | the only file under `test-suite/module/omod` this change may touch is `webModuleApplicationContext.xml`, and only for its XSD version pins (§0.4.1.3). `config.xml`, the activator and the controller are absent from §0.2.1, and making an unreachable route reachable is a **feature addition**, excluded by §0.2.2.1 |
+| **P6-2** | this register only | Rule 4 freezes the DAO layer and authorises **exactly one** edit inside it — the `DbSession.createCriteria` javadoc — and §0.9.2 is decisive on the rest: a repair changes what `UserService.getUsers` returns for a paginated call, which is the one outcome the plan forbids regardless of a green build. Subsection 7 sets this out in full |
+| **P7-1, P7-2, P7-3, Security MINOR-1…8, INFO-1…7** | the **Security and Dependency-Safety Register** above, under their original identifiers | already registered with their grounds; subsection 8 records the mapping and what re-testing added |
+| **B-WEB** | this register only, subsection 9 | it is not a defect in the repository at all — it is a constraint on the campaign's own evidence gathering |
+
+So the accurate statement for this register is the same strong one the security register makes: **every item
+carries a register row and none carries a site comment**, because this change is not authorised to write a
+comment into any of their files. That is not a weaker disposition than a site comment — it is the only
+disposition available, and Rule 5's purpose is served either way: the defect is recorded and left alone.
+
+### 4. The Register: Build, Test and Lifecycle Items
+
+Severity and category are the campaign's. "Attributable?" answers the TR1 question — *can this line's change
+be traced to Spring 6+/Hibernate 6+/Jakarta/Java 21?* — and it is **No** for every row, which is why every
+row is recorded rather than repaired.
+
+| ID | Severity | Site | Measured condition | Attributable? / plan ground |
+|---|---|---|---|---|
+| P4-1 | Major | `checkstyle.xml` (`LineLength` nested under `TreeWalker`); root `pom.xml` `pluginManagement` | the gate is **both broken and unbound**, and both halves were re-measured here. Invoked directly, `maven-checkstyle-plugin:3.6.0:check` on `openmrs-api` exits **1** with `Failed during checkstyle configuration: cannot initialize module TreeWalker - TreeWalker is not allowed as a parent of LineLength` — `LineLength` became a `Checker` child in Checkstyle 8.24 and is no longer accepted under `TreeWalker`. Invoked normally, it never runs at all: `maven-checkstyle-plugin` occurs in **exactly one** place in the whole reactor, inside root `pluginManagement`, with **no `<executions>`**, so the lifecycle executes it **zero** times. Section (a).2 already records the second half in its unvalidated-plugin table | **No** — §0.9.6, §0.4.1.8, TR1 |
+| P5-1 | Major | `test-suite/module/omod/pom.xml`, the `maven-dependency-plugin:unpack-dependencies` execution bound at `generate-resources` | `./mvnw clean test` reaches **5,105** passing tests and then fails in `openmrs-test-suite-module-omod` with **MDEP-98**: the execution unpacks `${project.parent.artifactId}-api`, which at the `test` phase of a clean reactor has not been packaged yet. A preceding `package`/`install` supplies the artifact, which is why the corpus figure is reproducible with the two-command sequence this document has always used and is **not** reproducible from `mvn clean test` alone. The `install` step of gate A8 is therefore load-bearing, not incidental | **No** — §0.4.1.8 REFERENCE, TR1 |
+| P5-2 | Major | `web/pom.xml` Surefire `<exclude>**/test/*</exclude>`; `web/src/test/java/org/openmrs/web/test/WebModuleActivatorTest.java` | the pattern removes the classes sitting **directly** in package `org.openmrs.web.test` from the default corpus — `WebModuleActivatorTest` among them, which carries **7** `@Test` methods (counted in the file). Forced into an isolated run they produce **7 tests / 7 errors**, because the Anonymous role fixture the module install/start/stop/upgrade path needs is absent; run together they additionally collide over JobRunr tables. The classes one level deeper, `org.openmrs.web.test.jupiter.Base*ContextSensitiveTest`, are **not** matched by that pattern and are the harness the rest of `web` runs on | **No** — TR1, §0.10.3.2, §0.2.2.2 |
+| P5-3 | Major | `test-suite/performance/src/test/java/org/openmrs/StartupPerformanceIT.java` | `./mvnw verify -Pperformance-test` never reaches a comparison: the baseline container exits because a **root-owned mode-0700** temporary directory is mounted at `/openmrs/data` while the image runs as **uid 1001**. A `chmod 0777` diagnostic clone reached `started=200` in 29 s, so the harness works and the mount does not. No throughput number is produced by the official profile in either direction — which is exactly why §0.2.2.4 documents that profile rather than quoting it, and why section (e).6 quotes **no** performance figure from it | **No** — §0.2.2.4, site absent from §0.2.1, TR1 |
+| P5-4 | Minor | scheduler/ShedLock bootstrap ordering under the H2 test profile | the **passing** suite emits errors it does not fail on, because scheduling starts before the H2 `shedlock` table exists: `INSERT INTO shedlock(...)` raises `BadSqlGrammarException`, ShedLock logs `JdbcTemplateStorageAccessor.insertRecord() … Unexpected exception`, and Spring's `TaskUtils$LoggingErrorHandler` logs `Unexpected error occurred in scheduled task`. The **kind** is deterministic; the **count is not**, and this register says so rather than quoting one number as if it were: the campaign counted **29 + 29**, and a re-run while writing this row counted **78 + 78** — one lock-provider error paired with one scheduled-task error each time — because the total depends on how many scheduler ticks fall before the table exists. Both runs still reported **5,106 / 0 / 0 / 45**. Log noise inside a green run is the worst place for a real fault to hide, which is why it is registered rather than shrugged at | **No** — site absent from §0.2.1, TR1 |
+| P5-5 | Minor | `api/src/main/java/org/openmrs/module/ModuleFileParser.java` | temporary `moduleUpgrade*.omod` archives, including **zero-byte** ones, survive the tests that create them and can break a later context with `ZipException` or a missing mapping. Corrupt-input probing reconfirmed the creation path and cleaned up after itself | **No** — site absent from §0.2.1, TR1 |
+
+### 5. The Register: Runtime, Behavioural and Image Items
+
+| ID | Severity | Site | Measured condition | Attributable? / plan ground |
+|---|---|---|---|---|
+| P4-2 | Major | `JobRunrSchedulerService` (`JobId.parse` in `getTask` and `deleteTask`); frozen `scheduler_task_config.uuid CHAR(38)` | the documented H2 install path completes, and the **restart** then stays at **503** with `IllegalArgumentException: UUID string too large`, because H2 hands back the 36-character UUID padded to **38**. A `VARCHAR`/`TRIM` diagnostic clone restarts cleanly. Subsection 7 reproduces the mechanism from first principles | **No** — §0.2.2.2 and §0.9.2 freeze the column; `JobRunrSchedulerService` absent from §0.2.1; TR1 |
+| P4-3 | Minor | context shutdown — Infinispan/JobRunr executors, Liquibase `Scope` | a hot restart logs retained worker, Rx and expiration threads and Liquibase `ThreadLocal` leak warnings. The same restart is otherwise clean: the thirteen failure patterns the security register lists all returned **0**, and a served static resource was byte-identical across it | **No** — sites absent from §0.2.1, TR1 |
+| P4-4 | Minor | `Dockerfile`, `/usr/local/tomcat/conf/Catalina/localhost` | the runtime uid **1001** cannot create the Tomcat host configuration directory; startup logs the failure. The deployment still reaches a served, healthy state, which is why this is Minor and not a blocker | **No** — §0.5.4.4, TR7, TR1 |
+| P6-1 | Major | `test-suite/module/omod/src/main/resources/config.xml`; the module activator and controller | the real built OMOD deploys, but `GET /openmrs/module/testmodule/hello` answers **404** in every stock and diagnostic deployment. Two distinct causes: `config.xml` composes the activator from Maven coordinates — `${project.parent.groupId}.${project.parent.artifactId}.TestModuleActivator` expands to `org.openmrs.module.openmrs-test-suite-module.TestModuleActivator`, **not a legal Java FQCN**, while the class is `org.openmrs.module.testmodule.TestModuleActivator`; and after correcting that diagnostically the controller still never enters the live web context, which declares no supported component scan or import. The artifact is the reactor's own **test fixture module**, not a shipped product endpoint | **No** — §0.4.1.3 scopes this module's in-scope file to `webModuleApplicationContext.xml`'s XSD pins; §0.2.2.1 excludes feature additions; TR1 |
+| P6-2 | Major | `api/src/main/java/org/openmrs/api/db/hibernate/HibernateUserDAO.java`, `getUsers(String, List, boolean, Integer, Integer)` | the query carries **no `ORDER BY`**; `setFirstResult`/`setMaxResults` paginate in SQL, and each returned page is then sorted **in Java** by `UserByNameComparator`. Global order therefore survives within a page and not across pages: the campaign measured full `[502, 501, 1]` against pages `[501, 1]` and `[502]`, concatenating to `[501, 1, 502]`. Subsection 7 sets out why this one is recorded rather than repaired, at length, because it is the item the campaign failed G6 and V4 on | **No** — Rule 4, §0.2.2.2, and decisively §0.9.2; TR1 |
+| DS-0029 | Minor | `Dockerfile`, the three `apt-get install` lines | none of the three passes `--no-install-recommends`, producing three HIGH-policy misconfiguration findings from a container-image policy scan. Confirmed in the file: all three `RUN apt-get update && apt-get install -y …` lines lack the flag | **No** — §0.5.4.4, TR7, TR1 |
+
+### 6. The Two Findings That Were Repaired Instead
+
+Thirty items above are recorded and left alone. Two were not, and the difference is the whole point of the
+attribution test: **this document is the one artifact the change owns outright**, so a defect *in it* is
+attributable by construction and must be fixed rather than filed.
+
+| ID | Severity | The defect | The repair |
+|---|---|---|---|
+| P8-1 | Minor | the Definition-of-Done bullet on removed coordinates listed six survivors as each still resolving "to ≥ 1 line" in a sentence whose first clause is about the dependency graph. Read as a graph claim it is **false for `type-converter`**, which is BOM-managed only and correctly contributes **0** dependency-tree nodes | all three places that carry the list — the Definition of Done, section (b).6 and the gate A2 result row — now say **`NOTICE.md` line** explicitly, the false reading is named and withdrawn, and the gate itself gained a three-way assertion (`1` tracked POM, `0` tree nodes, `1` `NOTICE.md` line) so the distinction is machine-checked rather than trusted. Re-measured after the edit: **1 / 0 / 1** |
+| P8-2 | Minor | the schema-comparison script in section (e).4 left the client's TLS mode to its default, which makes it **unrunnable as written** on a MariaDB 11.4-or-later client against the documented plain-TCP fixture. A procedure nobody can run is not evidence | the script gained the fail-closed `DB_TLS` knob described in (e).3, wired into both the client defaults file and the JDBC URL. The corrected block was then extracted from this file **verbatim** and executed end-to-end: `PASS`, exit **0**, and every figure in (e).1 reproduced exactly, MD5 included. (e).1 records that re-execution and its two negative controls |
+
+### 7. P4-2 and P6-2 in Full
+
+These two are recorded at length because a reader should be able to check the mechanism rather than take the
+row on trust, and because between them they carry the campaign's G6 and V4 verdicts.
+
+**P4-2 — why H2 breaks the restart and MariaDB does not.** The frozen schema declares the column as
+`CHAR(38)`: `<column name="uuid" type="CHAR(38)">` in
+`api/src/main/resources/org/openmrs/liquibase/snapshots/schema-only/liquibase-schema-only-2.9.x.xml`. A
+canonical UUID is **36** characters, so the value is stored short and the two engines disagree about what
+comes back out. Reproduced here at the storage layer, with the harness's own H2 version and URL mode:
+
+```text
+  H2 2.3.232, jdbc:h2:mem:…;MODE=LEGACY   CREATE TABLE t (uuid CHAR(38))
+    stored length    36
+    retrieved length 38          -> "e2e0a1b8-1f2c-4d3e-8a9b-0c1d2e3f4a5b  "
+    UUID.fromString  IllegalArgumentException: UUID string too large
+
+  MariaDB 10.11.7, the live fixture   information_schema COLUMN_TYPE = char(38)
+    SELECT CHAR_LENGTH(uuid) FROM openmrs.scheduler_task_config   ->  36
+```
+
+That is the whole defect: H2 right-pads a `CHAR` to its declared width on retrieval and MariaDB strips the
+pad, so `JobId.parse` receives a 38-character string on the H2 path and a 36-character one on the MariaDB
+path. It explains why the deployed MariaDB runtime is unaffected, and why the green 5,106-test corpus — which
+runs on H2 but never re-parses a persisted scheduler UUID across a context restart — cannot catch it. The
+repair belongs in the parse site, not in the column: the column is frozen byte-for-byte by §0.2.2.2, and
+widening or trimming it would be exactly the schema change this whole change exists to avoid.
+
+**P6-2 — why the pagination defect is recorded and not repaired.** The code is unambiguous and it is
+**byte-identical to the base commit**: an HQL `select distinct user from User as user inner join
+user.person.names as name` with no `ORDER BY`, `setFirstResult(start)` and `setMaxResults(length)` applied to
+it, and `returnList.sort(new UserByNameComparator())` applied to whatever page came back. Sorting after
+pagination cannot produce a global order, and the campaign's measurement is what that predicts.
+
+The obvious repair — order in the query, with an id tie-breaker, before the offset and limit — is refused on
+three independent grounds, and the third is the one that settles it:
+
+- **Rule 4** freezes the DAO layer and authorises exactly one edit inside it, the `DbSession.createCriteria`
+  javadoc. `HibernateUserDAO` is REFERENCE.
+- **TR1** finds no attribution: the missing `ORDER BY` is not a Spring, Hibernate, Jakarta or Java 21
+  artefact. It predates all of them here — the file is unchanged since before this migration.
+- **§0.9.2** forbids the repair outright. "An upgrade that changes what a service method returns … has
+  failed regardless of a green build." Adding `ORDER BY` changes what `UserService.getUsers` returns for
+  every paginated call — which rows, in which order, for which page. On a medical-records platform that is
+  the specific outcome this change is not permitted to alter, and doing it *inside* a migration is the worst
+  possible place to do it, because the migration is what a reviewer would then have to clear of suspicion.
+
+Rule 5's escape hatch does not apply either: a pre-existing defect is repaired only when it **blocks a
+validation item**, and none is blocked. The oracle for V4 is the corpus, and the corpus is green at
+5,106 / 0 / 0 / 45 — a fact this register does not soften, because §0.6.1.1's untouched query primitives
+(57 `cb.lower(`, 64 `cb.asc(`/`cb.desc(`, 50 `orderBy(`, 7 `setFirstResult`, 14 `setMaxResults`) are all
+still exactly as the plan found them.
+
+**What the campaign's G6 and V4 verdicts do and do not mean.** The campaign recorded both as FAIL, on P6-1
+and P6-2. That verdict is recorded here without softening, and so is its scope: behavioural *preservation* is
+a claim about this change against its base commit, and both items reproduce **identically at the base
+commit** — the files are byte-identical, proven in subsection 2. So this change did not cause them, did not
+worsen them, and does not hide them. It equally does not fix them, and nothing in this document should be
+read as claiming otherwise: the correct reading of G6 is *nothing observable changed*, which the evidence
+supports, **not** *everything observable is correct*, which it does not.
+
+### 8. Items Already Registered Above, Re-Tested and Still Open
+
+The campaign re-tested all 18 items of the security register. Every one reproduced, none is closed, and the
+grounds for each are unchanged. Only the identifiers moved:
+
+| Campaign ID | Security register ID | What re-testing added |
+|---|---|---|
+| P7-1 | MAJOR-3 | a second, independent scan pass: **21 HIGH, 28 MEDIUM, 2 LOW and 0 critical** Java findings, with all **12** affected jars confirmed present in the WAR and compatible fix versions confirmed to exist. The earlier register counts **51 advisories across 12 coordinates**; the two are not in conflict — one counts advisories, the other counts severity-bucketed scanner findings, over the same twelve coordinates |
+| P7-2 | MAJOR-1 | determinism: the 500 Exception Report reproduces after a restart, and the disclosed frames are stable (`ModuleUtil.java:1123`, `ModuleResourcesServlet.java:86`) |
+| P7-3 | MAJOR-2 | determinism: the credential keys still reach the log and the generated runtime properties are still `root:root` mode **0644** after a re-check |
+| Security MINOR-1, MINOR-2, MINOR-7 | MINOR-1, MINOR-2, MINOR-7 | reconfirmed, including that **17** error bodies carry `Apache Tomcat/11.0.24` while response *headers* stay clean |
+| Security MINOR-3 | MINOR-3 | widened matrix: **0 of 32** responses carry any of CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` or `Permissions-Policy`; HSTS correctly not counted on an HTTP-only listener |
+| Security MINOR-4 | MINOR-4 | reconfirmed: `HttpOnly` present, `SameSite` absent, `Secure` correctly not counted without HTTPS |
+| Security MINOR-5 | MINOR-5 | scale: **500** anonymous 404 requests raised retained sessions from **34 to 534**, and a restart cleared them. The earlier register measured 25 requests producing 25 sessions — the same behaviour at twenty times the volume |
+| Security MINOR-6 | MINOR-6 | the mitigation held under re-measurement: no Tomcat jar in the WAR, and the container that served every probe reports **Apache Tomcat/11.0.24**, outside the affected range. Exposure remains confined to the `cargo:run` development path |
+| Security MINOR-8 | MINOR-8 | reconfirmed reachable, with a best-effort scan attributing 11 medium advisories to the two bundled libraries |
+| INFO-1 … INFO-7 | INFO-1 … INFO-7 | all reconciled with no state change. INFO-6 — the unavailability of policy-compliant current advisory research — was elevated to the campaign's mandatory blocked task and is subsection 9 |
+
+### 9. The Blocked Advisory-Research Task
+
+The campaign carried a mandatory requirement to gather authoritative current advisory research, and recorded
+it as **BLOCKED**: four searches, restricted by policy to a single permitted result domain, returned **zero**
+results, so zero policy-compliant authoritative sources were available. It states explicitly that no
+noncompliant source was used and nothing was fabricated. That is the right disposition, and it is a
+constraint on the campaign's evidence gathering rather than a defect in this repository — which is why it has
+no site, no diff and no plan ground.
+
+It is registered here because it bounds what this document may claim, and because the constraint is not
+hypothetical: **it reproduces.** A search for current Spring advisory information run while writing this
+section returned nothing at all, exactly as section (d).6 and §0.9.7 of the plan already record for the
+version queries. So the honest statement of what the advisory evidence in this document rests on is:
+
+- **machine-readable scanner output over this tree** — a CycloneDX SBOM with OSV-Scanner and Trivy — for
+  which coordinates are affected, at what severity, and whether a fix version exists;
+- **primary registry endpoints** — Maven Central's `maven-metadata.xml` and `.pom` responses — for whether a
+  named fix version actually resolves;
+- **no** external editorial or advisory-narrative source, in either campaign.
+
+That is weaker than a current advisory feed would be, and it is stated as weaker rather than dressed up. What
+it is sufficient for is the only decision this change had to make about those advisories: whether the plan
+permits the bumps that would close them. It does not — §0.5.2, §0.2.2.3, §0.5.1.4 and §0.9.3 — and no
+advisory feed would change that.
+
 ## Behavioural-Preservation Evidence
 
 This is a medical-records platform, so behavioural preservation is the point of the exercise. An upgrade
@@ -2595,11 +2944,24 @@ jar is used.
 
   # A2  NOTICE.md attribution is truthful: nothing attributed that is no longer shipped,
   #     while the coordinates that ARE still shipped keep their attribution.
+  #     EVERY count below is a count of NOTICE.md LINES. It is not a graph check and must not
+  #     be reported as one: attribution and resolution are different questions, and one of the
+  #     six coordinates answers them differently.
   grep -cE 'commons-fileupload|groovy-all' NOTICE.md          # expect 0
   for c in commons-collections liquibase-core infinispan \
            jakarta.xml.bind-api jaxb-runtime type-converter; do
     printf '%-24s %s\n' "$c" "$(grep -ci "$c" NOTICE.md)"     # expect >= 1 for each
   done
+  #     type-converter is BOM-MANAGED ONLY - one dependencyManagement entry in bom/pom.xml and
+  #     no reactor module declaration - so it is attributed and correctly contributes NOTHING
+  #     to the resolved graph. Assert both halves, so neither can be quietly restated as the
+  #     other: 1 POM, 0 tree nodes, >= 1 NOTICE.md line.
+  #     The POM half is asked of TRACKED files, for the same reason A4 and A5 are: a recursive
+  #     filesystem grep also finds any untracked copy of the tree an earlier campaign left
+  #     behind, and reports 2 where the repository contains 1.
+  git grep -l 'type-converter' -- '*pom.xml' | wc -l          # expect 1 - bom/pom.xml
+  grep -c  'type-converter' "$DEPTREE"                        # expect 0 - and grep exits 1
+  grep -ci 'type-converter' NOTICE.md                         # expect 1
 
   # A3  Spring contexts still load. Be exact about which run proves what: the V2 test run
   #     exercises FOUR of the five in-scope contexts, not all five.
@@ -2692,6 +3054,12 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
   #     the test totals below. Both logs must be RETAINED for the grep to have anything to
   #     read: a timing quoted from a log the run did not keep is a figure no reader can
   #     check.
+  #     The ORDER is load-bearing, not stylistic: `./mvnw clean test` on its own does NOT reach
+  #     5,106. It gets 5,105 and then fails in openmrs-test-suite-module-omod with MDEP-98,
+  #     because that module unpacks the module-api artifact at generate-resources and nothing
+  #     has packaged it yet at the test phase of a clean reactor. The install below supplies it.
+  #     That is item P5-1 of the Acceptance-Campaign Findings Register - a pre-existing,
+  #     base-identical property of that POM, not something this change introduced.
   ./mvnw clean install -DskipTests -B > install.log 2>&1; echo "install exit=$?"
   ./mvnw test -B                     > test.log    2>&1; echo "test exit=$?"
   grep -E '^\[INFO\] Total time' install.log test.log
@@ -2782,7 +3150,7 @@ executed verbatim, and every line it printed is reproduced here:
 | Gate | Command output, as printed | Expected | Verdict |
 |---|---|---|---|
 | A1 | removed-coordinate hits **0**; `liquibase-core` nodes **6** | 0; 6 | PASS |
-| A2 | `commons-fileupload\|groovy-all` in `NOTICE.md` **0**; `commons-collections` 1, `liquibase-core` 1, `infinispan` 1, `jakarta.xml.bind-api` 1, `jaxb-runtime` 1, `type-converter` 1 | 0; each ≥ 1 | PASS |
+| A2 | **all counts are `NOTICE.md` lines, not dependency-tree nodes** — `commons-fileupload\|groovy-all` in `NOTICE.md` **0**; `commons-collections` 1, `liquibase-core` 1, `infinispan` 1, `jakarta.xml.bind-api` 1, `jaxb-runtime` 1, `type-converter` 1 | 0; each ≥ 1 | PASS |
 | A3 | `openmrs_static_content-servlet` **0** hits; `openmrs_static_content` **2** hits (`web.xml:274`, `web.xml:323`); parse/schema failures in `test.log` **0** | 0; 2; 0 | PASS |
 | A4 | versioned Spring grammars over tracked `*.xml` — no output | 0 | PASS |
 | A5 | `java.sun.com/xml/ns/javaee` over tracked `*.xml` — no output | 0 | PASS |
@@ -2792,7 +3160,12 @@ executed verbatim, and every line it printed is reproduced here:
 | A9 | `BUILD SUCCESS`, **0 violations**, no file reformatted | 0 violations | PASS |
 | A10 | `PASS: A10 - document present, structurally sound, all mandated sections found` | that line, exit 0 | PASS |
 
-Four of those rows carry a caveat that belongs with the number rather than in a footnote. **A4 and A5**
+Five of those rows carry a caveat that belongs with the number rather than in a footnote. **A2** counts
+lines of `NOTICE.md` and nothing else, which matters for one of its six coordinates: `type-converter` is
+**BOM-managed only**, so its `1` is an attribution line while its dependency-tree node count is — correctly
+— **0**. The gate's code always read `NOTICE.md`; it is the *reporting* of it, here and in section (b).6 and
+the Definition of Done, that could be misread as a graph claim, and all three now say which file they mean.
+**A4 and A5**
 measure *tracked* `*.xml` only, for the two reasons given in the block above — generated
 `web/target/spotbugsXml.xml` quotes the retired namespace in a report entry, and this document quotes it on
 purpose when recording the `override-web.xml` transformation. **A7**'s per-pattern counts are the
@@ -3072,8 +3445,13 @@ revision of this list asserted an outcome in the abstract, the number that settl
       summing the five per-module `Results:` blocks — 4,929 + 146 + 24 + 6 + 1, with all 45 skips in
       `openmrs-api` — rather than by transcription. No assertion was modified, no test deleted and no new
       `@Disabled` added, and that is measured rather than asserted: **0** test-source files differ from the
-      base commit and **0** `@Disabled` lines were added to any `.java` file. The 45 is a ceiling, and it
-      held.
+      base commit — `git diff --name-only "$BASE"..HEAD -- '*/src/test/java/*'` returns **0** — and **0**
+      `@Disabled` lines were added to any `.java` file. The pathspec is deliberately `src/test/java`
+      rather than `src/test`: exactly **one** file under a `src/test` tree does differ, the test-scoped
+      servlet descriptor `webapp/src/test/resources/override-web.xml`, and it differs **because this change
+      rewrites it** — it is the Jakarta descriptor completion of §0.2.1.3, not a test. Naming the pathspec
+      is the point; a reader who widened it and found 1 would otherwise have caught this document in an
+      apparent contradiction. The 45 is a ceiling, and it held.
 - [x] `./mvnw dependency:tree -B` shows **zero `javax.*` dependency-tree nodes** — not merely zero
       `servlet` and `persistence` nodes — across all **1,620** lines of output.
 - [x] `grep -rE "import javax\.(servlet|persistence|validation|annotation|transaction)"` returns zero hits,
@@ -3083,7 +3461,15 @@ revision of this list asserted an outcome in the abstract, the number that settl
       `javax.swing` 8, `javax.imageio` 6, `javax.crypto` 5, `javax.sql` 2).
 - [x] The three removed coordinates are absent from the graph and from `NOTICE.md` — **0** hits in each —
       and no other attribution was disturbed: `commons-collections`, `liquibase-core`, `infinispan`,
-      `jakarta.xml.bind-api`, `jaxb-runtime` and `type-converter` each still resolve to **≥ 1** line.
+      `jakarta.xml.bind-api`, `jaxb-runtime` and `type-converter` each still match **≥ 1** line **of
+      `NOTICE.md`**. That is an *attribution* count and nothing more, and the distinction is not pedantry:
+      `type-converter` is **BOM-managed only** — declared once in `bom/pom.xml`'s `dependencyManagement`
+      and by **no** reactor module — so it correctly resolves to **0** dependency-tree nodes while holding
+      exactly **1** `NOTICE.md` line. An earlier revision of this bullet said the six coordinates "each
+      still resolve to ≥ 1 line" in a sentence whose first clause is about the graph; read that way the
+      claim is **false for `type-converter`**, and it is **withdrawn**. Gate A2's code was never wrong — it
+      greps `NOTICE.md` and only `NOTICE.md` — but prose that a reader can misread as a graph assertion is
+      a defect in the evidence, so it is corrected here, in the A2 row and in section (b).6 alike.
 - [x] No file under the frozen sets appears in **either** the committed-range `git diff --name-status
       "$BASE"..HEAD` **or** the worktree `git status --porcelain` over the frozen pathspec — both return no
       output. The pathspec names **eight** patterns, `initial_test_db.sql` among them, and each is
@@ -3110,6 +3496,21 @@ revision of this list asserted an outcome in the abstract, the number that settl
       five changed `.java` files contain **zero** non-comment changed lines, so the bytecode is identical and
       no bytecode-level finding can originate here. **Nothing was repaired**, because no item's site is a
       file this change may edit and no item is attributable to the target stack.
+- [x] The **acceptance axis** is recorded on the same terms. A later full acceptance campaign — 33 feature
+      groups, 20,964 selected automated executions, every one of the 18 security items re-tested — confirmed
+      **G1 through G5** and raised **32 findings plus one blocked task**. Two of the 32 were defects in *this
+      document* and were therefore **repaired** rather than filed: the `type-converter` attribution claim
+      that could be read as a dependency-graph claim (**P8-1**), and a section (e).4 script that a
+      MariaDB 11.4-or-later client could not run as written (**P8-2**). Both repairs were re-measured — the
+      corrected three-way assertion reports **1 tracked POM / 0 tree nodes / 1 `NOTICE.md` line**, and the
+      corrected script was extracted from this file verbatim and executed to `PASS` with **every** figure in
+      section (e).1 reproduced, MD5 included. The remaining **30** carry a register row each in the
+      Acceptance-Campaign Findings Register with site, measured condition and the plan clause that refuses
+      the repair, and **every cited site is byte-identical to `"$BASE"`** — including the two the campaign
+      failed G6 and V4 on, `HibernateUserDAO.getUsers` and the test-fixture module route — so no item in that
+      register is a regression introduced here. The campaign's blocked mandatory advisory-research task is
+      recorded too, together with what this document's advisory evidence actually rests on, because that
+      constraint **reproduces** rather than being peculiar to the campaign.
 - [x] Every UPDATE is traceable to a **named attribution** — of the two distinct kinds set out at the head
       of the Change Inventory: the target generation for the migration edits, and **Rule 5** for the five
       comment-only annotations, which by definition are *not* target-stack-attributable. Every one of the
