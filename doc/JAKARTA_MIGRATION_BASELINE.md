@@ -812,7 +812,7 @@ Recorded so that Rule 1 is visible operating as a brake rather than as an excuse
 |---|---|---|
 | `commons-collections:commons-collections` 3.2.2 | **kept** | **live, not dead** — 30 source imports (`CollectionUtils`, `ListUtils`, `MapUtils`, `Predicate`, `comparators.ComparatorChain`, `comparators.NullComparator`, `set.ListOrderedSet`), including the raw `org.apache.commons.collections.Predicate` in `AttributeMatcherPredicate`. Migrating to `commons-collections4` has no Spring/Hibernate/Jakarta/Java-21 attribution, so Rule 1 excludes it |
 | `org.slf4j:slf4j-api` / `jcl-over-slf4j` 1.7.36 | **kept** | SLF4J is not a namespace concern, so there is no attribution |
-| Spring 7.0.8 | **declined** | exists, but no validation item requires it and it would force re-validation of the whole lock-step chain |
+| Spring 7.0.8 | **declined** | exists, but no validation item requires it and it would force re-validation of the whole lock-step chain. **A later security campaign measured what this declination costs** — 7.0.8 is the single fix for eleven Spring advisories, three of them HIGH, on jars present in the deployed archive. The declination stands on §0.2.2.3, §0.5.1.4, §0.5.2 and §0.9.3, and the measured weight is recorded in the Security and Dependency-Safety Register so the trade-off is visible rather than implicit |
 | Hibernate ORM 7.3.12.Final | **declined** | same reason |
 | Hibernate Validator 9.1.3.Final | **declined** | same reason |
 | `com.fasterxml.jackson.core:jackson-annotations` `2.21` | **kept as pinned** | the missing patch component is **deliberate and correct, not a skew**. The registry check is *this document's* evidence, not the BOM's — re-verified directly against Maven Central: `.../jackson-annotations/2.21/jackson-annotations-2.21.pom` returns **HTTP 200** and `.../2.21.2/jackson-annotations-2.21.2.pom` returns **HTTP 404**, and the local repository correspondingly holds only `2.21`. (The `2.21.2` pinned by `jacksonVersion` at `bom/pom.xml:59` applies to `jackson-core`, `jackson-databind`, `jackson-datatype-jsr310` and `jackson-datatype-hibernate7`, all of which do publish that patch — `jackson-annotations` is the single artifact that opts out, with its own literal version.) The BOM records only that the omission is intentional — its inline comment at `bom/pom.xml:333` reads, in full, `<!-- No patch version -->`; it does **not** carry the 404/200 rationale, and it was not edited to add it, because a comment expanding on registry availability has no Spring/Hibernate/Jakarta/Java-21 attribution and Rule 1 excludes it |
@@ -1901,6 +1901,482 @@ sites it was not (items 6 and 7, per the table at the head of this section). Tha
 between Rule 1 and Rule 5 in practice: attribution decides whether a finding is repaired or merely
 recorded, and it also decides *where* the record can be written.
 
+## Security and Dependency-Safety Register
+
+A dedicated security and dependency-safety validation campaign was run against this tree after the change
+was complete: 362 test cases across nine surfaces, of which 350 passed and 12 produced findings —
+**18 items in total, 0 critical, 3 major, 8 minor and 7 informational**. Its verdict on the work recorded
+in this document was that **every requirement this change itself touched passed**, and that **every one of
+the 18 items is pre-existing and base-identical**, so none of them is a regression introduced here.
+
+This section records all 18 anyway. Rule 5 requires that a defect found in passing be recorded rather than
+repaired, and Rule 6 requires that **every** gap be written down; a finding that is real, measured, and
+declined on plan grounds is exactly the kind of gap those two rules exist to capture. Leaving them in a
+transient report rather than in the register would make this document quietly incomplete on the one axis it
+had not previously covered at all.
+
+### 1. Provenance, and Why This Register Is Separate from the Rule 5 One
+
+The register above is the **Agent Action Plan's** seven-item list: defects the plan itself enumerated during
+scope discovery, five of which it also authorised a site comment for. This register is different in three
+ways, and conflating them would misrepresent both:
+
+- **Different discovery point.** These items were found by runtime probing of a deployed build — HTTP
+  surface, container logs, dependency-graph scanning, classloader inspection — not by reading the tree.
+- **Different sites.** Not one of them lives in a file this change may edit. Every site is either a
+  REFERENCE-only file or a file absent from the plan's in-scope enumeration entirely, so **no site comment
+  is available for any of them** — the register row *is* the whole record.
+- **Different identifiers.** The campaign's own identifiers (`MAJOR-1`…`MAJOR-3`, `MINOR-1`…`MINOR-8`,
+  `INFO-1`…`INFO-7`) are kept verbatim so a reader can match a row here to the report it came from. They
+  are **not** renumbered into the 1-7 scheme above, and the two schemes do not overlap.
+
+One item does connect the two registers: `INFO-7` names a **second, distinct** defect in
+`api/src/main/resources/messages.properties` — a missing line terminator, unrelated to the orphaned
+FileUpload keys that are item 6 of the Rule 5 register. Both are in that same file; they are not the same
+defect. Subsection 10 states each precisely.
+
+### 2. Attribution: All Eighteen Items Are Pre-Existing, Measured Rather Than Asserted
+
+"Pre-existing" is a claim about a diff, so it is settled with one. Every file cited by any of the 18 items
+was compared against the base commit, and **every comparison is empty**:
+
+```bash
+  # Every site cited by the 18 items. Expect NO output: each file is byte-identical to $BASE.
+  git diff --name-only "$BASE"..HEAD -- \
+    startup-init.sh startup.sh \
+    webapp/src/main/webapp/WEB-INF/web.xml \
+    webapp/src/main/webapp/error.html \
+    webapp/src/main/webapp/WEB-INF/csrfguard.properties \
+    'webapp/src/main/webapp/WEB-INF/view/scripts/**' \
+    api/src/main/java/org/openmrs/module/ModuleUtil.java \
+    api/src/main/resources/messages.properties \
+    web/src/main/java/org/openmrs/module/web/ModuleResourcesServlet.java \
+    web/src/main/java/org/openmrs/web/filter/StartupFilter.java \
+    web/src/main/java/org/openmrs/web/filter/OpenmrsFilter.java \
+    webapp/pom.xml
+
+  # bom/pom.xml IS edited by this change, so "unchanged" is the wrong test for it.
+  # The right test is that the edit is ONLY the exclusion - no version property moved.
+  git diff "$BASE"..HEAD -- bom/pom.xml | grep -E '^\+[^+]'
+  #   measured: exactly 4 added lines, and they are
+  #     <exclusion> / <groupId>javax.xml.bind</groupId> / <artifactId>jaxb-api</artifactId> / </exclusion>
+  #   so springVersion, jacksonVersion, nettyVersion, postgresqlVersion and tomcatVersion
+  #   all still hold their base-commit values.
+
+  # The five changed .java files carry NO executable change, which is what makes any
+  # bytecode-level finding provably not ours. Expect NO output.
+  for f in $(git diff --name-only "$BASE"..HEAD -- '*.java'); do
+    git diff "$BASE"..HEAD -- "$f" \
+      | grep -E '^[+-][^+-]' \
+      | grep -vE '^[+-][[:space:]]*(\*|/\*|//|\*/)'
+  done
+```
+
+All three blocks were run and all three produced the expected result: the first printed nothing, the second
+printed exactly the four exclusion lines, and the third printed nothing across
+`DbSession.java`, `HibernateSessionFactoryBean.java`, `StringEnumType.java`, `OrderValidator.java` and
+`DrugOrderValidator.java`. **The Java edits in this change are javadoc and comment text only — zero
+executable lines — so the compiled bytecode is identical to the base commit's.**
+
+The first block contains one pathspec that could pass by matching nothing — a glob rather than a literal
+path — and an "expect no output" gate over an empty pathspec is a silent false pass. It is therefore held to
+the same non-vacuity standard as the frozen-artifact pathspec in the Definition of Done:
+`git ls-files -- 'webapp/src/main/webapp/WEB-INF/view/scripts/**'` returns **113** tracked files, so the
+glob is genuinely comparing something. Every other entry in that block is a literal path to a file that
+exists.
+
+### 3. Where Each Item Is Recorded, and Why No Site Edit Was Permissible
+
+| Items | How they are recorded | Why no site edit |
+|---|---|---|
+| **MAJOR-1, MINOR-1, MINOR-2, MINOR-7** | this register only | the shared site is `webapp/src/main/webapp/WEB-INF/web.xml`, which §0.4.1.4 of the plan classifies **REFERENCE — "Not modified — it is the source pattern"** for `override-web.xml`. Its co-sites `ModuleUtil.java` and `ModuleResourcesServlet.java` appear nowhere in §0.2.1 |
+| **MAJOR-2** | this register only | `startup-init.sh` and `startup.sh` appear **nowhere** in the plan — not in §0.2.1's in-scope enumeration, not in the REFERENCE set, not in the frozen set |
+| **MAJOR-3, MINOR-6** | this register only | the site *is* `bom/pom.xml`, an in-scope file — but the specific lines are **version properties**, and §0.5.2 states the dependency delta in full: *"three removals, one exclusion, ninety-one holds… No dependency is added or upgraded."* §0.9.3 additionally names the lock-step properties do-not-touch |
+| **MINOR-3, MINOR-4, MINOR-5** | this register only | `web.xml` is REFERENCE (above); `webapp/src/main/webapp/WEB-INF/csrfguard.properties` is absent from the plan |
+| **MINOR-8** | this register only | `webapp/src/main/webapp/WEB-INF/view/scripts/**` is absent from the plan, and replacing a shipped client library changes what a browser receives |
+| **INFO-1 … INFO-7** | this register only | the campaign records them as requiring no action; their sites are the same out-of-scope files, plus environment provisioning that is not repository code at all |
+
+So the accurate statement for this register is stronger and simpler than for the Rule 5 one: **all
+eighteen items carry a register row and none carries a site comment**, because this change is not
+authorised to write a comment into any of their files. TR7 permits exactly one file to be created and
+names it; TR1 refuses any line that cannot be attributed to the target stack; and a security annotation in
+a servlet descriptor or an entrypoint script has no such attribution. Recording them here is therefore not
+a weaker disposition than a site comment — it is the **only** disposition available.
+
+### 4. The Register: Eleven Actionable Items
+
+Severity and category are the campaign's. "Attributable to the target stack?" answers the TR1 question —
+*can this line's change be traced to Spring 6+/Hibernate 6+/Jakarta/Java 21?* — and it is **No** for every
+row, which is why every row is recorded rather than repaired.
+
+| ID | Severity | Site | Measured condition | Attributable? / plan ground |
+|---|---|---|---|---|
+| MAJOR-1 | Major | `web.xml` (no `<error-page>`); `ModuleUtil.getModuleForPath`; `ModuleResourcesServlet` | `/openmrs/moduleResources/` answers **500** with the container's Exception Report: an `IllegalArgumentException`, a full stack trace naming filter and servlet classes with line numbers, and the container version. Without the trailing slash the failure is a `NullPointerException` on a null `path` | **No** — §0.4.1.4 (web.xml REFERENCE), §0.2.1 (co-sites absent), §0.2.2.1 (no feature additions), TR7, and §0.9.2 behavioural preservation |
+| MINOR-1 | Minor | `web.xml` (same) | a malformed or truncated multipart body answers **400** with a `FileUploadException` trace. The throwing class is Tomcat's **repackaged** `org.apache.tomcat.util.http.fileupload`, not the removed `commons-fileupload` | **No** — same grounds as MAJOR-1 |
+| MINOR-2 | Minor | `web.xml` (same) | an oversized upload answers **413** with a body naming the configured `<multipart-config>` maximum | **No** — same grounds |
+| MINOR-7 | Minor | `web.xml` (same) | the container name and version appear in error-response **bodies**. Response *headers* are clean — no `Server`, no `X-Powered-By` | **No** — same grounds |
+| MAJOR-2 | Major | `startup-init.sh` | the entrypoint `cat`s the generated properties file to stdout in both the installation and the update branch, so the admin password, the database username and password and the full JDBC URL reach `docker logs`. The generated files are mode **644** | **No** — site absent from the plan entirely; TR7; TR1 |
+| MAJOR-3 | Major | `bom/pom.xml` version properties | **51 advisories across 12 coordinates**, all resolving at compile or runtime scope and all physically present in the deployed `WEB-INF/lib`. Every one has a published fix. Subsection 5 carries the full table | **No** — §0.2.2.3 and §0.5.1.4 **already evaluated and declined** these bumps; §0.5.2 "no dependency is added or upgraded"; §0.9.3 lock-step do-not-touch |
+| MINOR-3 | Minor | `web.xml` | none of `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`, `Referrer-Policy` or `Permissions-Policy` is set on any probed path. HSTS is correctly **not** counted against the deployment — the connector is plain HTTP, so HSTS does not apply | **No** — §0.4.1.4, §0.2.2.1, TR1 |
+| MINOR-4 | Minor | `web.xml` `<cookie-config>` | `JSESSIONID` carries `HttpOnly` but no `SameSite`. `Secure` is correctly absent because there is no HTTPS listener | **No** — same grounds |
+| MINOR-5 | Minor | `csrfguard.properties` (`ValidateWhenNoSessionExists=false`) | repeated anonymous requests each allocate a fresh session, including on error paths | **No** — site absent from the plan; §0.2.2.1; TR1 |
+| MINOR-6 | Minor | `bom/pom.xml` `<tomcatVersion>` | the property pins a Tomcat inside a published vulnerable range. **Mitigations measured, not assumed:** the artifact is `provided` scope and **absent from the WAR**, and the container that served every probe reports **Apache Tomcat/11.0.24**, outside the affected range. The exposure is confined to the documented `cargo:run` development path | **No** — §0.5.2 no upgrades; TR1 (a container patch bump has no target-stack attribution) |
+| MINOR-8 | Minor | `webapp/.../view/scripts/jquery/jquery.min.js`, `.../jquery-ui/js/jquery-ui.custom.min.js` | **jQuery 1.7.1** and **jQuery UI 1.8.2** are served to clients from the core WAR, both with published XSS and prototype-pollution advisories | **No** — site absent from the plan; §0.9.2 (replacing them changes what a browser receives); TR1 |
+
+### 5. MAJOR-3 in Full: Runtime-Reachable Dependency Advisories
+
+This is the one item in this register that the Agent Action Plan had **already considered and decided**, so
+it is recorded in full rather than summarised. Section (d).5 above declines the Spring 7.0.8 bump on
+lock-step-revalidation grounds. That reasoning is unchanged and still governs. What was missing from this
+document, and is supplied here, is the **security weight of what was declined** — so that the decision
+reads as a deliberate, evidenced trade-off rather than as a version footnote.
+
+Every version in the two right-hand columns was **re-measured here**, not copied: the resolved column from
+this tree's own `dependency:tree`, and the fix column by fetching each candidate POM from Maven Central.
+
+| Coordinate | Resolved here | Advisories (HIGH) | Representative advisory | Published fix, HTTP-verified |
+|---|---|---|---|---|
+| `io.netty:netty-codec-http` | 4.2.12.Final | 14 (5) | request desync; request smuggling | 4.2.16.Final — **200** |
+| `com.fasterxml.jackson.core:jackson-databind` | 2.21.2 | 10 (2) | `PolymorphicTypeValidator` bypass → arbitrary class instantiation | 2.21.4 — **200** |
+| `org.springframework:spring-webmvc` | 7.0.7 | 7 (2) | denial of service; reflected XSS | 7.0.8 — **200** |
+| `io.netty:netty-codec-http2` | 4.2.12.Final | 6 (2) | decompression bomb | 4.2.16.Final — **200** |
+| `io.netty:netty-handler` | 4.2.12.Final | 3 (3) | IPv6 subnet-filter bypass; hostname verification silently disabled | 4.2.16.Final — **200** |
+| `org.springframework:spring-expression` | 7.0.7 | 3 (1) | SpEL algorithmic denial of service | 7.0.8 — **200** |
+| `io.netty:netty-codec-compression` | 4.2.12.Final | 2 (2) | Lz4 resource exhaustion | 4.2.16.Final — **200** |
+| `org.postgresql:postgresql` | 42.7.10 | 2 (2) | unbounded PBKDF2 → CPU denial of service | 42.7.12 — **200** |
+| `com.fasterxml.jackson.core:jackson-core` | 2.21.2 | 1 (1) | `maxNumberLength` bypass | 2.21.4 — **200** |
+| `io.netty:netty-transport-classes-epoll` | 4.2.12.Final | 1 (1) | RST-flood denial of service | 4.2.16.Final — **200** |
+| `com.mchange:c3p0` | 0.12.0 | 1 (0) | deserialization sink | 0.14.0 — **200** |
+| `org.springframework:spring-core` | 7.0.7 | 1 (0) | `AntPathMatcher` denial of service | 7.0.8 — **200** |
+
+**Reachability is measured, not inferred.** All twelve are physically present in the WAR this tree builds:
+
+```bash
+  # Reachability: the flagged jars are in the deployed archive, not merely in the graph.
+  unzip -l webapp/target/openmrs.war \
+    | grep -oE 'WEB-INF/lib/(netty-(codec-http2?|handler|codec-compression|transport-classes-epoll)|jackson-(databind|core)|spring-(webmvc|expression|core)|postgresql|c3p0)-[^ ]*\.jar' \
+    | sort -u | wc -l                       # measured: 12
+
+  # MINOR-6's mitigation, measured the same way: no Tomcat artifact ships in the WAR.
+  unzip -l webapp/target/openmrs.war | grep -cE 'WEB-INF/lib/tomcat-'   # measured: 0
+
+  # And the resolved versions the table above records, taken from this tree.
+  ./mvnw dependency:tree -B > deptree.txt
+  grep -oE ':(spring-core|jackson-databind|netty-handler|c3p0):jar:[^:]+' deptree.txt | sort -u
+  #   measured: spring-core 7.0.7, jackson-databind 2.21.2,
+  #             netty-handler 4.2.12.Final, c3p0 0.12.0
+```
+
+**What is claimed, and what is not.** The campaign cross-checked its 51 advisories against the National
+Vulnerability Database, the GitHub Security Advisory database and OSV, and reported full agreement on
+severity band with no discrepancy. **That cross-check was not independently re-executed while writing this
+section**, and it is not restated here as though it had been: the advisory counts and the representative
+descriptions in the table are the campaign's measurement, attributed to it. What *was* independently
+re-measured here is every fact this document depends on for its own decision — the twelve resolved
+versions, the twelve WAR entries, the zero Tomcat entries, and the HTTP status of every published fix
+version, all of which reproduced exactly. Individual advisory identifiers are deliberately not transcribed:
+an identifier copied without re-verification is precisely the kind of unchecked number this document
+refuses to carry.
+
+**The escalation, stated plainly.** Spring 7.0.8 is the single fix for **all eleven** Spring advisories in
+the table, three of which are rated HIGH, on jars that are present in the deployed archive. Section (d).5
+declines it, and this register does not overturn that: §0.2.2.3 and §0.5.1.4 evaluated the bump on the
+record, §0.5.2 fixes the dependency delta at three removals plus one exclusion with **no** upgrade, and
+§0.9.3 places `springVersion` on the do-not-touch list because the §3.2.3 chain — Spring ⇄ Hibernate ORM ⇄
+Hibernate Search ⇄ Lucene ⇄ Infinispan — cannot be moved a member at a time. Every one of those clauses is
+a frozen plan constraint that this change may not reinterpret. The point of recording the item here is that
+the trade-off is now **visible in the register a reader consults**, with its measured weight attached,
+instead of resting on a version-hygiene rationale that never mentioned it.
+
+### 6. MINOR-6 and MINOR-8, with Their Measured Mitigations
+
+**MINOR-6.** `bom/pom.xml` pins `<tomcatVersion>` inside a published vulnerable range, and the property is
+consumed twice: once by a `provided`-scope managed dependency and once by the `cargo-maven3-plugin`
+`tomcat11x` container used by the self-contained run mode documented in the repository's setup notes. Two
+mitigations were measured rather than assumed — `grep -cE 'WEB-INF/lib/tomcat-'` over the built WAR returns
+**0**, so nothing Tomcat-versioned ships in the archive; and the container that served every probe in the
+campaign reports **`Apache Tomcat/11.0.24`**, which is outside the affected range. The residual exposure is
+the development `cargo:run` path only. The property is left as it is: §0.5.2 admits no upgrade, and a
+container patch bump carries no Spring/Hibernate/Jakarta/Java-21 attribution under TR1.
+
+**MINOR-8.** Both bundled client libraries were re-fetched from the running deployment and matched against
+the tree: `/openmrs/scripts/jquery/jquery.min.js` returns **HTTP 200, 93,868 bytes**, banner
+`jQuery v1.7.1`; `/openmrs/scripts/jquery-ui/js/jquery-ui.custom.min.js` returns **HTTP 200, 207,478
+bytes**, banner `jQuery UI 1.8.2`. Both served bodies are **byte-identical** to the files in
+`webapp/src/main/webapp/WEB-INF/view/scripts/`, confirmed with `cmp`, and both files are byte-identical to
+the base commit. They are reachable without authentication through the static dispatcher. Replacing them
+would change what a browser receives from this WAR, which §0.9.2 forbids in this change, and their paths
+appear nowhere in §0.2.1.
+
+A note on how MINOR-8 was found, because it matters for anyone re-running the audit: it is invisible to
+every Maven-graph scanner, since neither library is a Maven coordinate here — they are checked-in files.
+Only a file-content analyzer sees them.
+
+### 7. Advisory Research for the Affected, Retained and Removed Coordinates
+
+The campaign also ran advisory research over the coordinates this change actually touched. Every row came
+back clean, and two of them are worth stating carefully because the honest reading is narrower than the
+flattering one.
+
+| Coordinate | Disposition here | Finding |
+|---|---|---|
+| `org.liquibase:liquibase-core` 4.32.0 | **retained** | one advisory exists in its history, an XXE affecting versions **below 4.8.0**. 4.32.0 is far past it, and all three scanners return zero for the resolved version |
+| `jakarta.xml.bind:jakarta.xml.bind-api` 4.0.5 | **retained** | zero advisories in any source, at any version |
+| `org.glassfish.jaxb:jaxb-runtime` 4.0.7 | **retained** | zero advisories in any source |
+| `javax.xml.bind:jaxb-api` 2.3.1 | **excluded** by this change | **zero known advisories.** The exclusion's value is namespace compliance and supply-chain hygiene — retiring a Java-EE-8-era artifact unmaintained since 2018 — and **not** vulnerability remediation. Section (b) should be read that way |
+| `commons-fileupload:commons-fileupload` 1.6.0 | **removed** by this change | seven advisories in its history including a critical `DiskFileItem` deserialization path, **none applicable at 1.6.0**. The removal is defence in depth against a component with a long recurring cadence, not the closing of a live hole; the gadget class was confirmed absent from the runtime |
+| `org.apache.commons:commons-fileupload2-jakarta-servlet6` 2.0.0-M5 | **removed** | none for this artifact; its sibling `fileupload2-core` did take one in the `2.0.0-M1`…`M4` window. The removal retires a **non-GA milestone** from a clinical archive |
+| `org.codehaus.groovy:groovy-all` 2.4.21 | **removed** | three advisories in its history, two critical, **none applicable at 2.4.21**. `org.codehaus.groovy` is the end-of-life coordinate line — 4.x moved to `org.apache.groovy` — so the removal retires an unpatched line rather than a currently-vulnerable jar |
+
+The framing in the `javax.xml.bind:jaxb-api` row is the important one. Nothing elsewhere in this document
+claims the exclusion fixed a vulnerability, and nothing should: it satisfies Rule 3, and Rule 3 is about
+generation purity.
+
+### 8. MAJOR-1, MINOR-1, MINOR-2 and MINOR-7: One Root Cause, Four Findings
+
+These four are a single defect seen from four angles. `webapp/src/main/webapp/WEB-INF/web.xml` declares no
+`<error-page>`, so any failure that escapes Spring's `DispatcherServlet` is rendered by the servlet
+container's own Exception Report page — which prints the exception, the stack trace with class names and
+line numbers, and the container name and version. Anything that can raise such a failure therefore becomes
+an information-disclosure finding, and three separate request shapes do.
+
+Every row below was **re-measured against the running deployment**, not transcribed:
+
+| ID | Request | Status | Exception, as returned | Frames | Container version in body |
+|---|---|---|---|---|---|
+| MAJOR-1 | `GET /openmrs/moduleResources/` | **500** | `java.lang.IllegalArgumentException: Input must be /moduleId/resource…` thrown at `ModuleUtil.java:1123` | 24 | yes |
+| MAJOR-1 | `GET /openmrs/moduleResources` (no trailing slash) | **500** | `java.lang.NullPointerException: Cannot invoke "String.lastIndexOf(int)" because "path" is null` at `ModuleUtil.java:1121` | 24 | yes |
+| MAJOR-1 | `GET /openmrs/moduleResources/x` | **500** | the same `IllegalArgumentException` | 24 | yes |
+| MINOR-1 | `POST` with `boundary=` empty | **400** | `org.apache.tomcat.util.http.fileupload.FileUploadException: … no multipart boundary was found` | 24 | yes |
+| MINOR-1 | `POST` with a truncated body | **400** | `org.apache.tomcat.util.http.fileupload.impl.IOFileUploadException: … Stream ended unexpectedly` | 35 | yes |
+| MINOR-2 | `POST` of a 76 MB part | **413** | `…impl.SizeLimitExceededException: … its size (79691989) exceeds the configured maximum (75000000)` | 25 | yes |
+| MINOR-7 | all six of the above | — | — | — | `Apache Tomcat/11.0.24` in **6 of 6** bodies |
+
+The frame counts are this document's own, and the counting rule is stated so the figure is reproducible
+rather than merely quoted: a frame is a body line matching a fully-qualified `pkg.Class.method(File.java:N)`
+form, and root-cause blocks are counted along with the primary trace, because they disclose the same
+information. A narrower rule yields a smaller number for the same response; the disclosure is identical
+either way.
+
+Two measurements matter beyond the disclosure itself.
+
+**The NPE and the `IllegalArgumentException` are two different lines of the same unguarded method.**
+`ModuleUtil.getModuleForPath` computes `path.lastIndexOf('/')` at `ModuleUtil.java:1121` before validating
+anything, then rejects a non-conforming result at `ModuleUtil.java:1123`. A request with no path info
+reaches the first line with `path` null; a request with a path info that is only a slash reaches the second.
+Both escape through `ModuleResourcesServlet.getLastModified` → `getFile`, which is called by the container
+before `service`, so no application-level handler is positioned to see either.
+
+**MINOR-1's exception class is itself evidence for a different part of this change.** The thrower is
+`org.apache.tomcat.util.http.fileupload.*` — the container's **repackaged, internal** copy — and not
+`commons-fileupload`, which this change removed. Multipart parsing therefore never depended on the removed
+coordinate, which independently corroborates section (b)'s finding that both FileUpload removals were
+source-neutral. The removal did not create this finding and could not have prevented it.
+
+**Response headers are clean; only bodies leak.** Re-measured on an error path: the response carries no
+`Server` header and no `X-Powered-By` header. The disclosure is confined to the rendered body.
+
+**No file this change modified appears in any captured frame.** That is asserted as a measurement, not an
+inference — each of the five changed Java files was searched for by name across every captured body:
+
+```bash
+  # Reproduce the cluster, then prove this change is absent from the evidence.
+  for u in 'moduleResources/' 'moduleResources' 'moduleResources/x'; do
+    curl -s -o "body-$(printf '%s' "$u" | tr -d /).html" \
+         -w '%{http_code} /openmrs/'"$u"'\n' "http://localhost:8080/openmrs/$u"
+  done                                        # measured: 500, 500, 500
+
+  # Headers on an error path: no Server, no X-Powered-By.
+  curl -sS -D - -o /dev/null http://localhost:8080/openmrs/moduleResources/ \
+    | grep -iE '^(HTTP/|server:|x-powered-by:)'          # measured: only "HTTP/1.1 500"
+
+  # None of the five files this change edited is named in any captured trace.
+  for c in DbSession HibernateSessionFactoryBean StringEnumType OrderValidator DrugOrderValidator; do
+    grep -ho "$c\.java:[0-9]*" body-*.html | wc -l
+  done                                        # measured: 0 0 0 0 0
+```
+
+**Why the repair is not re-landed here, and why that is a decision rather than an omission.** This is the
+one cluster in this register that *was* fixed at one point during this change and then deliberately
+reverted, so the record has to be exact:
+
+- Commit `ac3b2a086`, *"Return controlled error responses instead of disclosing internals"*, implemented
+  precisely the remedy these findings call for: `<error-page>` declarations for 400, 403, 404, 405, 413,
+  500 and `java.lang.Throwable` in `web.xml`; a generalised `error.html`; shape guards in
+  `ModuleResourcesServlet` and `PseudoStaticContentController`; multipart rejection handling in
+  `StartupFilter`; and `dirAllowed=false`. Eight files, all outside §0.2.1's in-scope enumeration.
+- Commit `0a514815f`, *"Restore the original web-tier error handling and extend test coverage"*, removed
+  all of it, on the stated ground that *"the move to the jakarta namespace on Spring 7 / Hibernate 7 is a
+  namespace and dependency change: it must not alter what a request returns."*
+- Commit `2cbf9d7f8` then restored the test corpus to its frozen 5,106 / 0 / 0 / 45 shape, because the
+  reverted work had also added test classes outside the planned file set.
+
+The reversion is what the plan requires, on four independent clauses. §0.4.1.4 classifies `web.xml` as
+**REFERENCE — "Not modified — it is the source pattern"**, and `ModuleUtil.java`,
+`ModuleResourcesServlet.java`, `PseudoStaticContentController.java` and `StartupFilter.java` appear nowhere
+in §0.2.1. §0.2.2.1 excludes feature additions and API-surface growth, and the reverted work had widened
+`StartupFilter`'s protected surface. TR7 freezes the structure. And §0.9.1-§0.9.2 make behavioural
+preservation the governing standard for the whole change: turning a 500 into a 404 changes what a request
+returns, which is the specific thing this change may not do. Re-landing it here would reinstate exactly the
+diff that was already judged out of scope once.
+
+The campaign that produced these findings reached the same conclusion independently, recording that the
+remedy *"should be re-landed as a separate, deliberately scoped change"* and that these items *"are not
+attributable to this checkpoint's changes and should be tracked as separate work rather than as migration
+defects."* Its suggested sequencing — the `<error-page>` block first, since one change closes MAJOR-1,
+MINOR-1, MINOR-2 and MINOR-7 together, together with a null and shape guard in
+`ModuleUtil.getModuleForPath` — is reported here as its output, for whoever picks up that separate change.
+This document takes no position on it beyond recording it.
+
+### 9. MAJOR-2: Credential Material in the Container Entrypoint
+
+`startup-init.sh` writes a properties file from a heredoc and then prints it. Both branches do it:
+line **184**, `cat "$OMRS_RUNTIME_PROPERTIES_FILE"`, in the update branch, and line **211**,
+`cat "$OMRS_SERVER_PROPERTIES_FILE"`, unconditionally in the installation branch. The heredoc it prints
+begins with `admin_user_password=${OMRS_ADMIN_USER_PASSWORD}`. Because the script is the container
+entrypoint, that output is container stdout, which is what `docker logs` and any log aggregator collect.
+
+Re-measured against the running container, with values redacted here but their presence recorded:
+
+| Measurement | Result |
+|---|---|
+| lines of container stdout carrying `admin_user_password=`, `connection.username=` or `connection.password=` | **3** |
+| position in the log | lines **5, 6, 9, 10, 11** of the first 20, i.e. at the very start of the container's life |
+| the JDBC URL | printed in full, including host, port and database name |
+| `/openmrs/openmrs-server.properties` | mode **644**, world-readable, cleartext |
+| `/openmrs/data/openmrs-runtime.properties` | mode **644**, world-readable, cleartext |
+| `/openmrs/data/openmrs.log` for contrast | mode **640** — so the 644 on the properties files is not a blanket umask effect |
+
+**No OpenMRS Java code is implicated.** The disclosure is entirely the shell entrypoint's; the application
+log itself was reported clean across the whole campaign. This matters for attribution: nothing in the
+`api`, `web` or `webapp` modules logs runtime properties.
+
+`startup-init.sh` and `startup.sh` appear **nowhere** in the Agent Action Plan — not in §0.2.1's in-scope
+enumeration, not in the REFERENCE set, not in the frozen set — and both are byte-identical to the base
+commit. TR7 permits exactly one file to be created and nothing to be restructured, and TR1 admits no line
+that cannot be attributed to the target stack; a shell script that predates this change and has no bearing
+on the `javax`-to-`jakarta` transition qualifies under neither. The item is recorded and left alone. The
+campaign's own note that it *"is unrelated to the migration and should be triaged on its own track"* is
+reported here as its assessment.
+
+### 10. MINOR-3, MINOR-4 and MINOR-5: Headers, Cookie Attributes and Session Creation
+
+All three were re-measured against the running deployment.
+
+**MINOR-3 — no security headers.** Eleven paths were probed, spanning a 200 on a health endpoint, a 200 on
+a static script, a 200 on the CSRFGuard script, a 404 on several missing paths, a 404 on an attempted
+`WEB-INF` fetch, and the 500 from subsection 8. On **all eleven**, the count of
+`X-Content-Type-Options` / `X-Frame-Options` / `Content-Security-Policy` / `Referrer-Policy` /
+`Permissions-Policy` headers is **0** — and, in the same measurement, the count of `Server` and
+`X-Powered-By` headers is also **0**, so the response header set is spare rather than merely unhardened.
+
+**HSTS is genuinely not applicable, and that was verified rather than assumed.** Inside the container the
+only listening TCP ports are **8005** (the shutdown port), **8080** (HTTP) and one ephemeral port; **8443 is
+closed**, and `server.xml`'s `Connector port="8443"` occurrence sits inside an XML comment. A
+`Strict-Transport-Security` header on a plain-HTTP-only deployment would be inert, so its absence is not
+counted as a gap. Recording that distinction is the difference between measuring a deployment and applying
+a checklist to it.
+
+**MINOR-4 — `JSESSIONID` attributes.** Measured verbatim:
+`Set-Cookie: JSESSIONID=<32 hex>; Path=/openmrs; HttpOnly`. `HttpOnly` is present, `SameSite` is absent,
+and `Secure` is correctly absent because there is no HTTPS listener. `web.xml`'s `<cookie-config>` sets
+`<http-only>true</http-only>` and nothing else.
+
+**MINOR-5 — session per anonymous request.** Twenty-five requests to a non-existent path yielded **25
+distinct** `JSESSIONID` values, so each anonymous request — including one that ends in a 404 — allocates a
+server session.
+
+**The CORS surface is genuinely absent, which is a PASS worth recording next to them.** Twelve
+Origin/path combinations (`http://localhost:8080`, `http://evil.example.com`, `null` and `*`, each against
+a health endpoint, a missing path and a static script) plus two credentialed `OPTIONS` preflights returned
+**zero** `Access-Control-*` headers in total. There is no permissive wildcard to find.
+
+```bash
+  # MINOR-3: no security header on any probed path; also no Server/X-Powered-By.
+  curl -sS -D - -o /dev/null http://localhost:8080/openmrs/nonexistent.htm \
+    | grep -ciE '^(x-content-type-options|x-frame-options|content-security-policy|referrer-policy|permissions-policy|strict-transport-security):'
+  #   measured: 0, on each of eleven paths
+
+  # HSTS applicability: is anything listening on 8443?
+  docker exec <app-container> sh -c \
+    "cat /proc/net/tcp /proc/net/tcp6 | awk '\$4==\"0A\"{split(\$2,a,\":\"); print a[2]}' | sort -u"
+  #   measured: 1F45 (8005), 1F90 (8080) and one ephemeral port - no 20FB (8443)
+
+  # MINOR-4 and MINOR-5.
+  curl -sS -D - -o /dev/null http://localhost:8080/openmrs/nonexistent.htm | grep -i '^set-cookie:'
+  #   measured: JSESSIONID=<32 hex>; Path=/openmrs; HttpOnly
+  for i in $(seq 1 25); do
+    curl -sS -D - -o /dev/null http://localhost:8080/openmrs/nonexistent.htm \
+      | grep -oiE 'JSESSIONID=[0-9A-F]+'
+  done | sort -u | wc -l                    # measured: 25
+```
+
+All three sites are outside this change. `web.xml` is REFERENCE under §0.4.1.4;
+`webapp/src/main/webapp/WEB-INF/csrfguard.properties` is absent from the plan; and adding a header-writing
+filter, a cookie attribute or session-suppression logic is a functional addition, which §0.2.2.1 excludes
+and TR1 refuses. Every one of the three files is byte-identical to the base commit.
+
+### 11. Information-Level Observations
+
+The campaign classified these as requiring no action. They are recorded because Rule 5's instruction is to
+write down what was found, and because two of them would otherwise look like defects to a later reader.
+
+| ID | Observation, re-measured here unless noted | Why it is not actionable in this change |
+|---|---|---|
+| INFO-1 | `/openmrs/health/started` and `/openmrs/health/alive` return **200 for every method tried** — GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS and an invented `FOOBAR` — because the startup filter matches on servlet path before any method check. Bodies are empty and no state changes. Control: `TRACE` on an ordinary path returns **405**, so method handling is not globally permissive | the filter is outside §0.2.1, and constraining it would change what a request returns |
+| INFO-2 | `OpenmrsFilter` sets `no-cache, no-store, must-revalidate` for the `…/csrfguard` path, but the CSRFGuard servlet runs later and overwrites it — the measured response carries `Cache-Control: private, max-age=28800`. **Empirically not a token exposure:** two independent sessions received **byte-identical** bodies with the same `ETag`, so the served script is static and embeds no per-session token. A no-op directive, not a leak. The source even carries its own `//TODO` explaining the intended filter ordering | `OpenmrsFilter` is outside §0.2.1; there is nothing to remediate in any case |
+| INFO-3 | username matching is case-insensitive. **The campaign measured the behaviour**; what is re-verified here is its cause — the test harness URL sets `IGNORECASE=TRUE` and the container's MariaDB reports `@@collation_server = utf8mb4_general_ci`, set by `docker-compose.yml`. It is collation-driven, still requires the correct password, and resolves to the same account | authentication code is untouched by this change and is base-identical |
+| INFO-4 | the fixture database publishes 3306 on `0.0.0.0` and its application account is not least-privilege | **provisioning of the test fixture, not repository code**. Nothing in the reactor sets either |
+| INFO-5 | the generated runtime properties files are mode **644** with cleartext credentials — the same root cause as MAJOR-2, recorded there with its measurement | see MAJOR-2 |
+| INFO-6 | `web_search` returned nothing for the campaign's advisory queries, reproducing what section (d).6 of this document already records for the version research. The campaign substituted the National Vulnerability Database, the GitHub Security Advisory database, OSV and Maven Central | a tool limitation, not a code defect. It is recorded so a reader knows which sources the advisory data rests on |
+| INFO-7 | two pre-existing non-security defects. **(a)** `api/src/main/resources/messages.properties` line 212 is malformed — `general.printedOn=Printed onerror.aunthenticationRequired`, a missing line terminator that concatenated the start of another entry onto this value. Verified here that this does **not** break the privilege message key: `error.aunthenticationRequired=Basic authentication required` is separately intact at line **78**, and the runtime message was confirmed correct. **(b)** SpotBugs with findsecbugs reports **307** pre-existing bug instances, with `<failOnError>` disabled under an in-POM `<!-- TODO Set to true once existing findings are resolved -->` | both are pre-existing. For (a), §0.6.6 row 6 already places `messages.properties` out of scope entirely and TR1 refuses an unattributable edit to a message catalogue. For (b), the bytecode is provably identical to the base commit — see subsection 2 — so not one of the 307 can originate here |
+
+**INFO-7(a) is not the same defect as item 6 of the Rule 5 register**, even though both live in
+`messages.properties`. Item 6 is a pair of *orphaned keys* naming a FileUpload handler class that has no
+`.java` file; INFO-7(a) is a *missing line terminator* on an unrelated entry. Neither is repaired, and they
+are listed separately so a future reader fixing one does not believe the other is covered.
+
+### 12. What the Same Campaign Confirmed About This Change's Own Deliverables
+
+The campaign's verdict on the work this document describes was that **every requirement the change itself
+touched passed**, and the confirmations are worth recording because several were obtained by methods this
+document could not use on its own. Reported as the campaign's measurements:
+
+- **Namespace purity proven at the JVM classloader, not only in the POM.** Eleven `javax.*` classes across
+  servlet, persistence, validation, annotation, transaction, activation and XML-binding all raised
+  `ClassNotFoundException` inside the deployed application, while the Jakarta APIs loaded from exactly the
+  expected jars and `jaxb-runtime` was confirmed as the JAXB implementation actually in use. The removed
+  coordinates' classes — including the FileUpload deserialization gadget class — were confirmed absent.
+- **The Jakarta JAXB substitution works in anger.** A clean-database Liquibase run completed with zero
+  JAXB, `ClassNotFoundException` or `NoClassDefFoundError` errors, which is the first real exercise of the
+  `jaxb-api` exclusion recorded in section (b).
+- **Startup is clean after the graph cleanup.** A cold restart reached a served health endpoint with zero
+  `ClassNotFoundException`, zero `NoClassDefFoundError`, zero `SAXParseException`, zero `SEVERE` and zero
+  Spring namespace-handler or schema-resolution failures — which is also an independent pass for the five
+  versionless Spring grammars, resolved offline. **This one was re-executed while writing this register**,
+  and reproduced: a cold restart reported `Server startup in [15152] milliseconds`, both health endpoints
+  returned **200**, all **thirteen** failure patterns scanned for — the five above plus
+  `javax.xml.bind`, `commons-fileupload`, `groovy`, `com.sun.tools`, `schema_reference`,
+  `Failed to read schema`, `BeanDefinitionParsingException` and `BeanCreationException` — returned **0**,
+  and a static resource served before and after the restart was **byte-identical** by MD5.
+- **The behavioural-preservation claims in the next section were checked at runtime.** Live proxy
+  introspection returned the advisor chain in the order recorded there, with authorization ahead of both
+  caching and transaction demarcation; both `APIAuthenticationException` message keys resolved to their
+  documented text, misspelling included; the `DAOException` → `APIException` → `RuntimeException` chain was
+  confirmed by reflection; and multipart handling was confirmed to run through Spring's
+  `StandardServletMultipartResolver`.
+- **Schema immutability was executed a second way.** Section (e) records this document's own comparison of
+  two disposable databases built from base-commit and current changelog bytes. The campaign ran a different
+  comparison — the already-installed database against a fresh clean-database Liquibase run — and also got
+  an empty normalised diff. The two runs report different table and changeset totals because they compare
+  different things: the totals in section (e) are for the disposable pair, whereas the installed instance
+  additionally carries Liquibase bookkeeping and JobRunr runtime tables, which the campaign excluded and
+  accounted for. Neither result contradicts the other; they are two independent axes reaching the same
+  conclusion.
+- **The frozen sets and the untouched protected paths held.** The changed-file set was confirmed as
+  planned with no hit against the changelogs, the HBM mappings, `AOPConfig.java` or `initial_test_db.sql`,
+  and the existing `api` authorization and security tests ran with zero failures.
+
 ## Behavioural-Preservation Evidence
 
 This is a medical-records platform, so behavioural preservation is the point of the exercise. An upgrade
@@ -2266,6 +2742,7 @@ print(len(E.parse('pom.xml').getroot().find('m:build/m:pluginManagement/m:plugin
   #     as written, wherever the prose happens to mention it.
   for h in 'Section (a):' 'Section (b):' 'Section (c):' 'Section (d):' 'Section (e):' \
            'Section (f):' 'Change Inventory' 'Pre-Existing Defect Register' \
+           'Security and Dependency-Safety Register' \
            'Behavioural-Preservation Evidence' 'How to Reproduce' 'Definition of Done'; do
     if ! awk -v h="## $h" 'index($0,h)==1{found=1} END{exit !found}' "$DOC"; then
       echo "FAIL: missing section '$h'" >&2; exit 1
@@ -2287,8 +2764,15 @@ reason the gate matches each heading as a literal anchored at **column 1** rathe
 string: the sentence above quotes `## Definition of Done` verbatim inside backticks, so an unanchored
 `grep -F` finds the quotation and survives deletion of the real heading — that control would report a pass
 on a document missing the section it names. Anchoring removes the loophole for every heading at once, and
-the anchored form is non-vacuous by measurement: each of the **eleven** mandated headings occurs exactly
+the anchored form is non-vacuous by measurement: each of the **twelve** mandated headings occurs exactly
 **once** at column 1 in this document, so no section can be satisfied by a mention of itself in prose.
+
+The list is **twelve**, not eleven, because `Security and Dependency-Safety Register` was added to it when
+that section was added to the document. The anchoring rule is what makes that safe: the heading string now
+appears twice in this file — once as the real `## ` heading and once inside the `for h in` list above — but
+the list occurrence is indented inside a fenced block and so is not at column 1, which is exactly the
+loophole the anchored form closes. Adding a section without adding it here would leave the gate unable to
+notice its deletion, so the two must be kept in step.
 
 **Per-gate measured results.** An earlier revision summarised this as "all of A1 through A10 were run and
 all passed", which is an attestation a reader cannot check — and which had in fact survived one revision in
@@ -2612,6 +3096,20 @@ revision of this list asserted an outcome in the abstract, the number that settl
       checked as such: gate A10 asserts a single `# ` H1, a terminating newline, balanced fences, no
       trailing whitespace and every mandated section heading, and those assertions were shown to reject six
       deliberate mutations of a copy.
+- [x] The security and dependency-safety axis is **recorded, not merely surveyed**. A dedicated campaign
+      raised **18** items — 0 critical, 3 major, 8 minor, 7 informational — and every one is now a register
+      row with its site, its measured condition and the plan clause that refuses the repair. Every item was
+      **re-measured while writing that register** rather than transcribed: the twelve advisory-bearing
+      coordinates were re-resolved from this tree and confirmed present in the WAR (**12** of 12), each
+      published fix version was confirmed to resolve on Maven Central (**HTTP 200**, twelve of twelve), the
+      six error-response probes were re-issued against the running deployment, the eleven-path header matrix
+      returned **0** security headers and **0** `Server`/`X-Powered-By` headers, twenty-five anonymous
+      requests produced **25** sessions, and fourteen CORS probes produced **0** `Access-Control-*` headers.
+      Attribution is a diff rather than an assertion: every cited site is byte-identical to `"$BASE"`, the
+      `bom/pom.xml` edit is still **only** the four exclusion lines with no version property moved, and the
+      five changed `.java` files contain **zero** non-comment changed lines, so the bytecode is identical and
+      no bytecode-level finding can originate here. **Nothing was repaired**, because no item's site is a
+      file this change may edit and no item is attributable to the target stack.
 - [x] Every UPDATE is traceable to a **named attribution** — of the two distinct kinds set out at the head
       of the Change Inventory: the target generation for the migration edits, and **Rule 5** for the five
       comment-only annotations, which by definition are *not* target-stack-attributable. Every one of the
